@@ -9,7 +9,7 @@ yeast cells — from raw microscope files to per-cell mRNA counts.
 - **Detect** — spot detection and dense-region decomposition (Big-FISH, https://big-fish.readthedocs.io/)
 - **Align** — registers the DIC/segmentation frame to the fluorescence frame
 - **Correct** — interactive mother/bud annotation in napari (via the
-  companion [`napari-buddy`](https://github.com/USERNAME/napari-buddy) plugin)
+  companion [`napari-buddy`](https://github.com/Tutuccilab/napari-buddy) plugin)
 - **Quantify** — per-cell and per-compartment (mother vs bud) counts of
   mRNAs, dense regions, nascent RNAs, transcription sites, and nuclei,
   with cell morphology
