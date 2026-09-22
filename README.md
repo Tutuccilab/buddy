@@ -21,7 +21,7 @@ Goal is to automate processing and record processing parameters.
 The module expects a directory containing the following files:
 - Fluorescent channels: .vsi microscopy files and the corresponding vsi directories
 - Cell outlines: 2D .tif files (e.g. DIC images)
-- Configuration: a json file containing channel and processing parameters (see `workflow.ipynb` to download an example)
+- Configuration: a json file containing channel and processing parameters.
 
 
 # Installation
