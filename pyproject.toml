@@ -1,0 +1,72 @@
+[project]
+name = "buddy"
+version = "0.0.1"
+authors = [
+  {name = "LaToya Vanderbling", email = "latoya.vanderbling@gmail.com"},
+]
+description = "Wrapper for BigFish spot detection package"
+readme = "README.md"
+
+# Omnipose is only tested on 3.8.5–3.10.11 and breaks on 3.11+,
+# so cap Python here. This stops pip from silently building an env
+# that can never install omnipose.
+requires-python = ">=3.9,<3.11"
+
+dependencies = [
+    # numpy<2 is important: cellpose-omni / big-fish / older scikit-image
+    # break against the numpy 2.0 API (e.g. np.str_ changes).
+    "numpy<2",
+    "scipy",
+    "scikit-image",
+    "big-fish",
+    "omnipose",
+    "bioio",
+    "bioio-bioformats",
+    "bioio-ome-tiff",   # provides OmeTiffWriter (moved out of bioio core in 3.x);
+                        # buddy/image.py does: from bioio_ome_tiff.writers import OmeTiffWriter
+    "jsonpickle",
+    "natsort",
+    "seaborn",
+    "matplotlib",
+    "pandas",     # notebooks 02-05 build/read the master dataframe
+    "tifffile",   # crop-generation notebooks write per-cell TIFFs
+    # NOTE: 'pathlib' was removed. It is part of the standard library
+    # since Python 3.4; the PyPI backport of the same name is unmaintained
+    # and can break installs under modern setuptools.
+]
+
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "License :: OSI Approved :: MIT License",
+]
+
+[project.optional-dependencies]
+# Install with: pip install -e ".[test]"
+test = ["pytest"]
+# The napari viewer + Qt backend. Installed INTO the env so `python -m napari`
+# launches from here instead of a base-conda napari.
+napari = ["napari[pyqt6]"]
+# Jupyter, so `python -m notebook` runs the pipeline notebooks from this env
+# (and never falls back to a broken base-conda Jupyter).
+notebooks = ["notebook", "jupyterlab"]
+# ONLY for the archived CNN bud-annotator trial (archive/). Heavy (PyTorch);
+# don't install unless you're reviving that experiment. For CUDA builds of
+# torch you may need the PyTorch index; CPU wheels install from PyPI fine.
+cnn = ["torch", "torchvision", "segmentation-models-pytorch", "tqdm"]
+
+[project.urls]
+Homepage = "https://github.com/LaToyaVanderB/buddy"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+include-package-data = true
+# If you prefer the version to live in buddy/__init__.py, delete the
+# static `version = "0.0.1"` above and uncomment the two blocks below.
+# Make sure buddy/__init__.py actually defines __version__ first, or
+# the build will fail — which is one of the current install snags.
+# [tool.setuptools.dynamic]
+# version = {attr = "buddy.__init__.__version__"}

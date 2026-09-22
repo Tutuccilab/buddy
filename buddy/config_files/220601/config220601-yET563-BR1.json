@@ -1,0 +1,78 @@
+{
+    "inputdir": "F:\\Mara BUD analyses\\220601\\yET563 BR1",
+    "outputdir": "F:\\Mara BUD analyses\\220601\\yET563 BR1\\output",
+    "parameters": {
+        "scale": [
+            200,
+            65,
+            65
+        ],
+        "spot_radius": [
+            880,
+            120,
+            120
+        ],
+        "sigma": [
+            0.75,
+            2.3,
+            2.3
+        ],
+        "patch_size": [
+            200,
+            200
+        ],
+        "translate_dic_by": [
+            -10,
+            10
+        ],
+        "expand_masks_by": 1,
+        "organism":"S.cerevisiae"
+    },
+    "experiments": [{
+        "strain": "YET918",
+        "condition": "ΔSUN4"
+    }, {
+        "strain": "YET563",
+        "condition": "ΔSHE2"
+    }, {
+        "strain": "YET572",
+        "condition": "ΔSHE3"
+    }, {
+        "strain": "YET915",
+        "condition": "WT"
+    }, {
+        "strain": "YET916",
+        "condition": "ΔSSD1"
+    }, {
+        "strain": "YET919",
+        "condition": "ΔMPT5"
+    }, {
+        "strain": "YET921",
+        "condition": "ΔSEC72"
+    }],
+    "channels": {
+        "ASH1CLB2": {
+            "filter": "CY5",
+            "mrna": "ASH1CLB2",
+            "threshold": 50,
+            "colormap": "magenta"
+        },
+        "SRL1": {
+            "filter": "CY3.5 NAR",
+            "mrna": "SRL1",
+            "threshold": 50,
+            "colormap": "gold"
+        },
+        "SUN4": {
+            "filter": "CY3",
+            "mrna": "SUN4",
+            "threshold": 50,
+            "colormap": "lime"
+        },
+        "DAPI": {
+            "filter": "DAPI",
+            "mrna": "DAPI",
+            "colormap": "blue"
+        }
+    }
+}
