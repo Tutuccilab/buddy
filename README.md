@@ -23,6 +23,10 @@ The module expects a directory containing the following files:
 - Cell outlines: 2D .tif files (e.g. DIC images)
 - Configuration: a json file containing channel and processing parameters.
 
+# Donwload code and example data
+Go to https://doi.org/10.5281/zenodo.22900927 to dowload napari, napari-buddy and some test data. 
+The folder structure of the zipped file should allow you to directly start with the tutorial after installation.
+Note: newer versions of the code can be downloaded by cloning this repo.
 
 # Installation
 
