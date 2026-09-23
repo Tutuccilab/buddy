@@ -103,3 +103,12 @@ Omnipose has to be installed with GPU support (https://omnipose.readthedocs.io/i
    1. Load an img.json file in napari
    2. Tweak spot detection parameters
 5. Batch detect spots: `buddy/FISH bulk processing.ipynb`
+
+## Issues
+
+If you encounter a problem, please [file an issue] with a detailed description.
+
+[napari]: https://github.com/napari/napari
+[pytest]: https://docs.pytest.org/
+[BSD-3]: http://opensource.org/licenses/BSD-3-Clause
+[file an issue]: https://github.com/Tutuccilab/buddy/issues
