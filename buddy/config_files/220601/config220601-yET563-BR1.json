@@ -1,6 +1,6 @@
 {
-    "inputdir": "F:\\Mara BUD analyses\\220601\\yET563 BR1",
-    "outputdir": "F:\\Mara BUD analyses\\220601\\yET563 BR1\\output",
+    "inputdir": "F:\\BUD analyses\\220601\\yET563 BR1",
+    "outputdir": "F:\\analyses\\220601\\yET563 BR1\\output",
     "parameters": {
         "scale": [
             200,
@@ -21,12 +21,11 @@
             200,
             200
         ],
-        "translate_dic_by": [
-            -10,
-            10
-        ],
-        "expand_masks_by": 1,
-        "organism":"S.cerevisiae"
+        "organism": "S.cerevisiae",
+        "min_size": 10,
+        "nuclei_min_size": 10,
+        "min_cell_area": 20,
+        "expand_px": 0
     },
     "experiments": [{
         "strain": "YET918",

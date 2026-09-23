@@ -423,6 +423,9 @@ class Image:
                 'affinity_seg': False,  # new feature, stay tuned...
             }
 
+        # allow the cell-segmentation minimum object size to be set from the config
+        params['min_size'] = self.experiment.parameters.get('min_size', params['min_size'])
+
         mask, flow, style = model.eval(self.grgb, **params)
         logging.info(f'Found {np.max(mask)} cells')
 
@@ -484,6 +487,9 @@ class Image:
         logging.info(f"nuclei model_type: {model_type}, channels: {params['channels']}")
 
         
+        # allow the nucleus-segmentation minimum object size to be set from the config
+        params['min_size'] = self.experiment.parameters.get('nuclei_min_size', params['min_size'])
+
         mask, flow, style = model.eval(DAPIzproj, **params)
         logging.info(f'Found {np.max(mask)} cells')
 
@@ -500,14 +506,19 @@ class Image:
 
 
     def postprocess_masks(self):
-        logging.info(f'postprocessing masks')
+        # min_cell_area and expand_px are read from the config 'parameters' block
+        # (with defaults) so they can be tuned without editing this code; the
+        # values actually used are recorded in img.json's segmentation block.
+        min_cell_area = self.experiment.parameters.get('min_cell_area', 20)
+        expand_px     = self.experiment.parameters.get('expand_px', 0)
+        logging.info(f'postprocessing masks (min_cell_area={min_cell_area}, expand_px={expand_px})')
 
         logging.info(f'..removing cell masks with no DAPI')
         self.cell_masks_with_dapi = remove_cell_masks_with_no_dapi(self.cell_masks, self.dapi_masks)[0]
 
-        logging.info(f'..discarding masks of size < 20')
+        logging.info(f'..discarding masks of size < {min_cell_area}')
         self.regionprops = get_regionprops(self.cell_masks)
-        self.cell_masks_by_area = filter_cells_by_area(self.cell_masks_with_dapi, self.regionprops, min_cell_area=20)[0]
+        self.cell_masks_by_area = filter_cells_by_area(self.cell_masks_with_dapi, self.regionprops, min_cell_area=min_cell_area)[0]
 
         logging.info(f'..removing DAPI masks with no cell')
         self.dapi_masks, _ = remove_dapi_masks_with_no_cell(self.dapi_masks, self.cell_masks_by_area)
@@ -516,6 +527,16 @@ class Image:
         #logging.info(f'..discarding large, round masks (min size 1000, min excentricity 0.8')
         #self.cell_masks_by_shape = filter_cells_by_shape(self.cell_masks_by_area, self.regionprops,
         #                                                 min_clump_area=200, max_clump_eccentricity=0.1)[0]
+
+        # optionally grow each cell outward (0 = off); overwrites the same file
+        if expand_px:
+            logging.info(f'..expanding cell masks by {expand_px} px')
+            self.cell_masks_by_area = expand_masks(self.cell_masks_by_area, expand_px)
+
+        # record what was actually used so it lands in img.json
+        if not hasattr(self, 'segmentation'):
+            self.segmentation = {'cells': {}, 'dapi': {}}
+        self.segmentation['postprocess'] = {'min_cell_area': min_cell_area, 'expand_px': expand_px}
 
         cellmaskfile = Path(self.savepath) / 'DIC_masks_pp.tif'
         io.imsave(cellmaskfile, self.cell_masks_by_area)
