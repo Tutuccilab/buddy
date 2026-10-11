@@ -39,12 +39,12 @@ jobs:
         with:
           path: tests/data
           key: test-data-v1
-      - name: Cache the model weights (bud model from release bud-models-v2, Omnipose models)
+      - name: Cache the model weights (bud model from release bud-models, Omnipose models)
         uses: actions/cache@v4
         with:
           path: |
             buddy/models/*.pt
             ~/.cellpose/models
-          key: models-bud-models-v2-${{ runner.os }}
+          key: models-bud-models-${{ runner.os }}
       - name: Slow tests (Omnipose + bud model)
         run: pytest -m slow -v --durations=0

@@ -27,7 +27,7 @@ Two models (choose in the config file, "bud_classification" -> "model"):
     "with_ASH1CLB2"   also uses the ASH1/CLB2 smFISH channel: fewer false pairs, better for small buds.
                       Not trained on she2/she3 mutants (ASH1 mRNA is not transported to the bud there).
 Both were trained with late-M cells (bud with its own full-size nucleus) included, so those are paired too.
-The weights (bud-models-v2) download automatically on first use; models/<name>.json describes each model.
+The weights (bud-models) download automatically on first use; models/<name>.json describes each model.
 
 Typical use (the bulk-processing notebook does this for you via Image.classify_buds):
     model = BudModel.load("with_ASH1CLB2", use_gpu=True)
@@ -52,7 +52,7 @@ MODELS = {   # cut_off: chosen on the gold set (see models/<file>.json)
     "with_ASH1CLB2": {"file": "bud_model_with_ASH1CLB2.pt", "uses_ash": True, "cut_off": 0.5, "crop_px": 192},
 }
 # where the weights are downloaded from the first time a model is used
-WEIGHTS_URL = "https://github.com/Tutuccilab/buddy/releases/download/bud-models-v2/{file}"
+WEIGHTS_URL = "https://github.com/Tutuccilab/buddy/releases/download/bud-models/{file}"
 DEFAULT_WEIGHTS_DIR = Path(__file__).parent / "models"
 
 CROP = 192                 # default crop size around each cell (px); enlarged 2x inside the network

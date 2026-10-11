@@ -1,5 +1,8 @@
 # buddy
 
+[![tests](https://github.com/Tutuccilab/buddy/actions/workflows/tests.yml/badge.svg)](https://github.com/Tutuccilab/buddy/actions/workflows/tests.yml)
+[![slow tests](https://github.com/Tutuccilab/buddy/actions/workflows/slow-tests.yml/badge.svg)](https://github.com/Tutuccilab/buddy/actions/workflows/slow-tests.yml)
+
 An end-to-end pipeline for quantifying single-molecule FISH (smFISH) in
 yeast cells — from raw microscope files to per-cell mRNA counts.
 `buddy` orchestrates:

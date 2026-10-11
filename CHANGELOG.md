@@ -10,7 +10,7 @@ Added after the analysis in the manuscript; results in the manuscript were obtai
 - A trained model assigns every bud to its mother and writes the bud masks (`bud_model.py`, "model D": the model
   sees DIC, DAPI and a soft dot on the cell's centre instead of its Omnipose outline, and predicts the cell, its
   bud and its class). Two models: `DIC_DAPI_only` (any strain) and `with_ASH1CLB2` (not for she2/she3 mutants).
-  Switch on with the `bud_classification` block in the config file. Weights: release `bud-models-v2`.
+  Switch on with the `bud_classification` block in the config file. Weights: release `bud-models`.
 - "Snap" (`"snap": true`): a bud that lies mostly inside one Omnipose object takes that whole object as its outline.
 - Cells the model is unsure about are flagged in napari (`check these buds` layer) and listed in `bud_flags.csv`.
 - Bud masks corrected by hand are never overwritten.
@@ -24,7 +24,7 @@ Added after the analysis in the manuscript; results in the manuscript were obtai
   a progress bar, a time estimate and "Stop after this image". The notebook and the panel use the same
   per-image functions (`pipeline.py`).
 - Train your own model: `05_train_bud_model.ipynb` (`bud_training.py`).
-- Model weights download automatically from the `bud-models-v1` release.
+- Model weights download automatically from the `bud-models` release.
 
 **Input**
 - Multi-page TIFF stacks (OME-TIFF, Fiji/ImageJ hyperstacks) are accepted as input next to .vsi files

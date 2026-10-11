@@ -1,7 +1,7 @@
 {
  "model": "with_ASH1CLB2",
  "model_type": "D",
- "weights_release": "bud-models-v2",
+ "weights_release": "bud-models",
  "source_run": "budE_ash epoch 16",
  "input_channels": [
   "DIC",

@@ -1,7 +1,7 @@
 {
  "model": "DIC_DAPI_only",
  "model_type": "D",
- "weights_release": "bud-models-v2",
+ "weights_release": "bud-models",
  "source_run": "budE_B epoch 22",
  "input_channels": [
   "DIC",
