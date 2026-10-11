@@ -1,19 +1,19 @@
-# ================================================
-# Spot Alignment Functions
-# ================================================
-# This module provides functions to align a set of points ("spots") to a 2D reference
-# distribution using a combination of global Monte Carlo search and local refinement.
-# Useful in image analysis, microscopy, or any spatial registration task.
+"""
+Alignment of the DIC frame (DIC image + Omnipose cell masks) to the fluorescence frame (where the spots were
+detected). The two are offset by a small translation that differs per image. The shift is found by moving the
+spots onto the cell masks: a Monte-Carlo search over shifts scored on a capped distance map, then a local
+refinement (Sander van Otterdijk, 2026). `align_image` applies it to an image folder (step 3).
 
-# Sander van Otterdijk, 09-03-2026
-# (distance-field fix + convenience wrappers, 08-2026)
-# ================================================
+    from buddy.spots.alignment import estimate_alignment_shift, align_image
+    mask_shift, spot_shift = estimate_alignment_shift(spots, cell_masks)   # (dy, dx) to move the masks by
+"""
+import logging
 
-# ----------------------------
-# Imports
-# ----------------------------
 import numpy as np
 from scipy.ndimage import distance_transform_edt
+from scipy.ndimage import shift as ndi_shift
+
+log = logging.getLogger("buddy")
 
 
 # ----------------------------
@@ -205,3 +205,84 @@ def estimate_alignment_shift(spots, masks, n_iter=4000, max_shift=200,
 
     mask_shift = (-spot_shift[0], -spot_shift[1])
     return mask_shift, spot_shift
+
+
+# -------------------------------------------------------------------------------------------------
+# the alignment step of the pipeline (step 3)
+# -------------------------------------------------------------------------------------------------
+def pad_to(arr, target_h, target_w):
+    """Place a 2D array in the top-left corner of a (target_h, target_w) canvas (zero padded / cropped)."""
+    arr = np.asarray(arr)
+    out = np.zeros((target_h, target_w), arr.dtype)
+    h, w = min(arr.shape[0], target_h), min(arr.shape[1], target_w)
+    out[:h, :w] = arr[:h, :w]
+    return out
+
+
+def align_image(files, spots, previous=None, overwrite_corrected=False, n_iter=4000, max_shift=200, radius=20, cutoff=50):
+    """
+    Estimate the DIC -> fluorescence shift of one image from its spots and apply it to the DIC image and the
+    Omnipose cell masks (files: buddy.paths.ImageFiles of the image folder).
+
+    Writes aligned_DIC.tif and aligned_DIC_masks.tif. With overwrite_corrected, corrected/DIC_corrected_masks.tif
+    (what spot counting reads) is written too: created from the shifted Omnipose masks when it does not exist;
+    when it exists and was aligned before (`previous` = the alignment recorded in img.json), it is only moved by
+    the change in shift since then (normally none), so running the step again never shifts it twice.
+
+    The shift is always estimated on the Omnipose masks with a fixed random seed (same result on every run).
+    Returns (alignment record for img.json, aligned cell masks, aligned DIC) or None when nothing could be aligned.
+    """
+    from skimage import io
+    spots = np.asarray(spots, float)
+    if not len(spots):
+        log.warning("..no spots found, skipping alignment")
+        return None
+    if not files.cell_masks.is_file():
+        log.warning("..no cell masks found, skipping alignment")
+        return None
+    cell_masks = io.imread(files.cell_masks)
+    dic = io.imread(files.dic) if files.dic.is_file() else None
+
+    # common canvas so that every spot coordinate indexes validly into every layer
+    shapes = [cell_masks.shape] + ([dic.shape] if dic is not None else [])
+    target_h = max([s[0] for s in shapes] + [int(spots[:, 1].max()) + 1])
+    target_w = max([s[1] for s in shapes] + [int(spots[:, 2].max()) + 1])
+    cell_masks = pad_to(cell_masks, target_h, target_w)
+    if dic is not None:
+        dic = pad_to(dic, target_h, target_w)
+
+    mask_shift, spot_shift = estimate_alignment_shift(spots, cell_masks, n_iter=n_iter, max_shift=max_shift,
+                                                      radius=radius, cutoff=cutoff, rng=np.random.default_rng(0))
+    dy, dx = mask_shift
+    log.info("..spots->mask shift %s, applying (dy=%d, dx=%d) to DIC + cell masks (cell mask source: pp)", spot_shift, dy, dx)
+    record = {"mask_shift": [int(dy), int(dx)], "spot_shift": [int(spot_shift[0]), int(spot_shift[1])],
+              "cell_mask_source": "pp", "target_shape": [int(target_h), int(target_w)], "n_spots": int(len(spots))}
+
+    move = lambda a, s: ndi_shift(a, shift=s, order=0, mode="constant", cval=0)
+    aligned_masks = move(cell_masks, (dy, dx))
+    io.imsave(files.aligned_cell_masks, aligned_masks, check_contrast=False)
+    aligned_dic = None
+    if dic is not None:
+        aligned_dic = move(dic, (dy, dx))
+        io.imsave(files.aligned_dic, aligned_dic, check_contrast=False)
+
+    if overwrite_corrected:
+        files.corrected.mkdir(parents=True, exist_ok=True)
+        dst = files.corrected_cells
+        if not dst.is_file():
+            io.imsave(dst, aligned_masks, check_contrast=False)
+            log.info("..wrote aligned cell masks to corrected/")
+        elif previous is not None and previous.get("cell_mask_source") == "pp":
+            ddy, ddx = dy - previous["mask_shift"][0], dx - previous["mask_shift"][1]
+            if ddy or ddx:
+                io.imsave(dst, move(pad_to(io.imread(dst), target_h, target_w), (ddy, ddx)), check_contrast=False)
+                log.info(f"..moved corrected cell masks by the change in shift ({ddy}, {ddx})")
+            else:
+                log.info("..corrected cell masks already aligned, left as they are")
+        elif previous is None:
+            io.imsave(dst, move(pad_to(io.imread(dst), target_h, target_w), (dy, dx)), check_contrast=False)
+            log.info("..shifted existing corrected cell masks into the fluorescence frame")
+        else:
+            log.warning("..corrected/DIC_corrected_masks.tif was aligned by an older buddy version (shift relative to "
+                        "earlier corrected masks) - left as it is; delete it to rebuild it from the Omnipose masks")
+    return record, aligned_masks, aligned_dic

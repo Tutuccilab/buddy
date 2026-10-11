@@ -17,6 +17,8 @@ import logging
 import os
 from pathlib import Path
 
+log = logging.getLogger("buddy")
+
 
 def default_workers(gb_per_image=4):
     """A safe number of parallel workers: limited by CPU cores and by memory (gb_per_image per worker)."""
@@ -63,7 +65,7 @@ def iter_parallel(function, jobs, workers, should_stop=None):
     Only `workers` jobs run at a time; should_stop(): when it returns True, no new jobs are started
     (the running ones finish).
     """
-    from concurrent.futures import ProcessPoolExecutor, wait, FIRST_COMPLETED
+    from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
     waiting = list(jobs)
     with ProcessPoolExecutor(max_workers=workers) as pool:
         running = {}
@@ -79,7 +81,7 @@ def iter_parallel(function, jobs, workers, should_stop=None):
                 try:
                     yield job, future.result(), None
                 except Exception as e:
-                    logging.error(f"image {job[0]} failed: {e!r}")
+                    log.error(f"image {job[0]} failed: {e!r}")
                     yield job, None, e
 
 

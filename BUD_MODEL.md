@@ -39,7 +39,7 @@ unsure about are boxed in the `check these buds` layer:
 * yellow — *weak pair* / *possible missed bud*: just above or below the model's cut-off
 
 Unbudded cells with high ASH1/CLB2 (≥ 8× a typical unbudded cell in the image) are boxed too, with or without the
-bud model, whenever an ASH1/CLB2 channel is counted (`cell_flags.py`, listed in `cell_flags.csv`):
+bud model, whenever an ASH1/CLB2 channel is counted (`buddy/quantification/cell_flags.py`, listed in `cell_flags.csv`):
 
 * magenta — *late-M pair?*: the cell and an unbudded neighbour each have their own full nucleus: mother + daughter
   in late M (pair them if they belong together), or two cells that have just divided
@@ -56,9 +56,9 @@ lists the pairs found, `bud_model_cells.csv` the model output per cell).
 **How good is it?** Tested on 198 hand-annotated cells from images the models never saw (chosen to
 over-represent the hard cases), the models assign buds to the right mother with a pairing F1 of 0.82
 (`with_ASH1CLB2`) and 0.80 (`DIC_DAPI_only`), and find most of the very small buds (< 1 µm²). Large buds
-(> 4 µm²) remain the weakest class: 69 % found by `DIC_DAPI_only`, 81 % by `with_ASH1CLB2`, so always check the
+(> 4 µm²) remain the weakest class: 81 % found by `DIC_DAPI_only`, 69 % by `with_ASH1CLB2`, so always check the
 flagged cells. Details: `methods.md`,
 scores per model: `buddy/models/bud_model_<model>.json`.
 
-**Train your own model** on your corrected images with `buddy/05_train_bud_model.ipynb`
-(code: `buddy/bud_training.py`; the model itself: `buddy/bud_model.py`).
+**Train your own model** on your corrected images with `notebooks/05_train_bud_model.ipynb`
+(code: `buddy/buds/bud_training.py`; the model itself: `buddy/buds/bud_model.py`).

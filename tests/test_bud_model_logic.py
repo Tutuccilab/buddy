@@ -5,7 +5,7 @@ claims, competition between cells, snap, the output masks and the flags. Pure nu
 import numpy as np
 import pandas as pd
 
-from buddy.bud_model import BACKGROUND, BUD, MOTHER, BudModel, mean_on
+from buddy.buds.bud_model import BACKGROUND, BUD, MOTHER, BudModel, mean_on
 
 
 def rect(masks, label, y0, x0, h, w):

@@ -9,8 +9,9 @@ reads bud == 1):
     1 = bud,  2 = background,  3 = mother
 """
 import numpy as np
-from skimage.measure import regionprops, label as cc_label
 from scipy.ndimage import binary_dilation
+from skimage.measure import label as cc_label
+from skimage.measure import regionprops
 
 # 3-class bud-mask labels
 BG, BUD, MOTHER = 2, 1, 3

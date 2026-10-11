@@ -24,14 +24,14 @@ bud masks and hand corrections from step 4) no longer fits; it is moved to corre
 and rebuilt by step 3.
 """
 import json
-import re
 import time
 from pathlib import Path
+
+from buddy.config import POLICIES
 
 STAGE_OF_STEP = {'read': 'configure', 'segment': 'segment', 'spots': 'spots'}
 STAGE_ORDER = ['configure', 'segment', 'spots']
 STEP_NAMES = {'read': 'step 1 (read)', 'segment': 'step 2 (segment)', 'spots': 'step 3 (spots)'}
-POLICIES = ('ask', 'skip', 'overwrite')
 
 
 # ---------------------------------------------------------------------------------------------
@@ -100,8 +100,7 @@ def _differences(old, new, prefix=''):
 # ---------------------------------------------------------------------------------------------
 def _json_of(exp, item, step):
     if step == 'read':
-        stem = re.sub(r'\.ome$', '', re.sub(r'_CY[A-Z0-9\s,._]+DAPI', '', Path(item['vsi_file']).stem))   # as in Image.__init__
-        return Path(exp.outputdir) / stem / 'img.json'
+        return Path(exp.outputdir) / exp.stem_of(item['vsi_file']) / 'img.json'
     return Path(item)
 
 
@@ -182,7 +181,7 @@ def select_images(exp, step, candidates=None, ask=None):
             overwrite = [item for item, *_ in changed]
             print(f'  -> overwriting {len(overwrite)} image(s)')
         else:
-            print(f'  -> skipping them (to overwrite: answer yes, or set "if_already_processed": "overwrite")')
+            print('  -> skipping them (to overwrite: answer yes, or set "if_already_processed": "overwrite")')
 
     todo = new + overwrite
     if step == 'segment':                 # new cell masks: the old corrected/ masks no longer fit

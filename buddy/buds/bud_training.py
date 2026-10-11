@@ -29,11 +29,25 @@ import pandas as pd
 from scipy import ndimage as ndi
 from skimage import io
 
-from buddy.bud_model import (BudModel, CLASSES, CROP, DOT_SIGMA, MODELS, build_network, centre_dot, crop_around,
-                             n_input_channels, normalise, normalise_ash, pad_to, pick_device)
-from buddy.dic_orientation import TRANSFORMS, dic_light_direction, lighting_preserving_transforms, rotation_to_reference
+from buddy.buds.bud_model import (
+    CLASSES,
+    CROP,
+    MODELS,
+    build_network,
+    centre_dot,
+    crop_around,
+    n_input_channels,
+    normalise,
+    normalise_ash,
+    pad_to,
+    pick_device,
+)
+from buddy.buds.dic_orientation import TRANSFORMS, dic_light_direction, lighting_preserving_transforms, rotation_to_reference
 
-PX_UM2 = 0.065 ** 2       # pixel area (um2) at the pixel size of our images
+DEFAULT_PIXEL_NM = 65.0   # pixel size when an image's img.json does not record it ("parameters" -> "scale")
+PX_UM2 = (DEFAULT_PIXEL_NM / 1000) ** 2   # pixel area (um2) at that pixel size
+
+log = logging.getLogger("buddy")
 MIN_CELL_PX = 20          # smaller Omnipose objects are not used as training examples
 UNCERTAIN_UM2 = 4.0       # raw Omnipose objects below this, uncurated and touching a cell -> ignore regions
 TOUCH_PX = 3              # "touching": within this many pixels
@@ -102,7 +116,7 @@ def _object_pixels(label_image):
     return out
 
 
-def label_cells(omni, cells, bud, late_m):
+def label_cells(omni, cells, bud, late_m, px_um2=PX_UM2):
     """
     One row per Omnipose cell, matched against your corrections:
       budded / unbudded : >= 50 % of the object lies on one curated cell and the outlines agree (IoU >= 0.5)
@@ -149,13 +163,13 @@ def label_cells(omni, cells, bud, late_m):
         neighbour_bud = bool(set(np.unique(bud_of[wide][ring]).tolist()) - {0, cell})
         edge = box[0].start == 0 or box[1].start == 0 or box[0].stop >= shape[0] or box[1].stop >= shape[1]
         yy, xx = np.nonzero(me)
-        rows.append(dict(label=label, cy=int(yy.mean() + box[0].start), cx=int(xx.mean() + box[1].start), area_um2=n * PX_UM2,
+        rows.append(dict(label=label, cy=int(yy.mean() + box[0].start), cx=int(xx.mean() + box[1].start), area_um2=n * px_um2,
                          kind=kind, cell=cell, iou=round(iou, 3), bud_px=int(bud_px[cell]) if kind == "budded" else 0,
                          touches_other_bud=neighbour_bud, late_m=cell in late_m, edge=edge))
     return pd.DataFrame(rows)
 
 
-def uncertain_objects(raw, cells):
+def uncertain_objects(raw, cells, px_um2=PX_UM2):
     """
     Raw Omnipose objects that buddy's clean-up did not keep as cells and that you did not curate, but which touch a
     curated cell and are small (< UNCERTAIN_UM2): maybe a bud the curation missed. The bud map is not graded there.
@@ -170,13 +184,21 @@ def uncertain_objects(raw, cells):
             continue
         m = raw[box] == label
         n = int(m.sum())
-        if n * PX_UM2 >= UNCERTAIN_UM2 or n < MIN_CELL_PX:
+        if n * px_um2 >= UNCERTAIN_UM2 or n < MIN_CELL_PX:
             continue
         if (cells[box][m] > 0).mean() >= 0.2:            # curated (part of a cell you kept)
             continue
         if (grown[box][m] > 0).any():                     # touches a curated cell
             keep[label] = True
     return np.where(keep[raw], raw, 0).astype(np.uint16)
+
+
+def pixel_area_um2(meta):
+    """Pixel area in um2 from an image's img.json (\"parameters\" -> \"scale\" = [z, y, x] in nm); DEFAULT_PIXEL_NM when missing."""
+    scale = (meta.get("parameters") or {}).get("scale")
+    if not scale or len(scale) < 3:
+        return PX_UM2
+    return (float(scale[1]) / 1000) * (float(scale[2]) / 1000)
 
 
 def prepare_image(folder, out_dir, ash_channel="ASH1CLB2"):
@@ -193,7 +215,7 @@ def prepare_image(folder, out_dir, ash_channel="ASH1CLB2"):
     shape = cells.shape
     omni = io.imread(folder / "DIC_masks_pp.tif")
     if not (omni > 0).any():
-        logging.warning(f"{folder}: no Omnipose cells - skipped"); return None
+        log.warning(f"{folder}: no Omnipose cells - skipped"); return None
 
     meta = json.load(open(folder / "img.json")) if (folder / "img.json").exists() else {}
     shift = meta.get("results", {}).get("alignment", {}).get("mask_shift")
@@ -212,11 +234,12 @@ def prepare_image(folder, out_dir, ash_channel="ASH1CLB2"):
     ash = pad_to(normalise_ash(io.imread(ash_file).max(0)), shape) if ash_file.exists() else np.zeros(shape, np.float32)
     rotation = rotation_to_reference(dic_light_direction(x[0], omni)[0])
 
-    table = label_cells(omni, cells, bud, late_m_cells(folder, ash_channel))
+    px_um2 = pixel_area_um2(meta)
+    table = label_cells(omni, cells, bud, late_m_cells(folder, ash_channel), px_um2)
     table.insert(0, "image", name)
     out_dir.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(out_dir / f"{name}.npz", x=x.astype(np.float16), ash=ash.astype(np.float16), omni=omni.astype(np.uint16),
-                        uncertain=uncertain_objects(raw, cells), bud_cells=np.where(bud, cells, 0).astype(np.uint16),
+                        uncertain=uncertain_objects(raw, cells, px_um2), bud_cells=np.where(bud, cells, 0).astype(np.uint16),
                         cells=cells.astype(np.uint16), rotation=rotation)
     table.to_csv(out_dir / f"{name}.csv", index=False)
     return name

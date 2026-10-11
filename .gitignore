@@ -41,6 +41,10 @@ config_local.json
 # bud model weights are published as a GitHub release (downloaded automatically), not stored in git
 buddy/models/*.pt
 buddy/bud_training_data/
+# outputs of the notebooks: training files and your own weights (05), cell crops (04)
+notebooks/bud_training_data/
+notebooks/models/
+notebooks/crops/
 
 # test data (a 75 MB crop + reference outputs): downloaded from the GitHub release test-data-v1 by the tests
 tests/data/

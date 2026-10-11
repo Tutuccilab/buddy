@@ -17,9 +17,9 @@ On a CPU, Big-FISH itself is faster, so buddy only uses these functions on a GPU
 Switch off with "gpu_spot_detection": false in the parameters block of the config file.
 """
 import numpy as np
-
-from bigfish.detection import spots_thresholding, automated_threshold_setting
+from bigfish.detection import automated_threshold_setting, spots_thresholding
 from bigfish.detection.utils import get_object_radius_pixel
+
 try:                                                       # the exact kernels SciPy (and so Big-FISH) uses
     from scipy.ndimage._filters import _gaussian_kernel1d
 except ImportError:                                        # older SciPy
@@ -35,7 +35,6 @@ BLOCK_ROWS = 512        # rows (y) processed at once; lower this if the GPU runs
 def _pad(x, r, dim, mode):
     """Pad r pixels on both sides of one dimension. 'reflect' = SciPy reflect (d c b a | a b c d), 'nearest' = edge value."""
     import torch
-    parts_before, parts_after = [], []
     while r > 0:                      # SciPy keeps reflecting when the kernel is longer than the image
         n = x.shape[dim]
         k = min(r, n)
@@ -96,7 +95,7 @@ def _in_row_blocks(image, halo, function, device, out_dtype=None):
         if outputs is None:
             outputs = [np.zeros(image.shape, out_dtype or r.cpu().numpy().dtype) for r in results]
         for out, r in zip(outputs, results):
-            out[:, y0:y1] = r[:, y0 - a:y0 - a + (y1 - y0)].cpu().numpy()
+            out[:, y0:y1] = r[:, y0 - a:y0 - a + (y1 - y0)].cpu().numpy()      # numpy casts to out's dtype
         del block, results
     return outputs if len(outputs) > 1 else outputs[0]
 

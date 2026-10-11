@@ -26,10 +26,10 @@ installed by relative path and several notebooks reach across with `..\..`:
 ```
 <parent>/
 ├── buddy/               <- the buddy repo
-│   └── buddy/           <- the importable package (image.py, experiment.py, …)
-│       ├── bud_tools.py
-│       ├── config_files/
-│       └── 01_… to 05_… notebooks
+│   ├── buddy/           <- the importable package (image.py, experiment.py, …)
+│   │   ├── config_files/
+│   │   └── models/
+│   └── notebooks/       <- 01_… to 05_… notebooks
 └── napari-buddy/        <- the plugin repo
     └── napari_buddy/    (_reader.py, _bud_widget.py, _config_widget.py, …)
 ```
@@ -100,7 +100,7 @@ Open `01_fish_bulk_processing.ipynb` (this is the main pipeline notebook). In th
 first configuration cell, set the config path and the input/output folders:
 
 ```python
-exp = Experiment.from_cfg_file(r"config_files\220601\config…json")
+exp = Experiment.from_cfg_file(r"..\buddy\config_files\220601\config…json")
 exp.inputdir  = r"…\your data\STRAIN BRn"
 exp.outputdir = r"…\your data\STRAIN BRn\output"
 exp.create_image_list()

@@ -68,7 +68,7 @@ Use `python -m pip` so installs land in the active env, not base conda.
 conda activate buddy
 pytest -m "not slow"   # fast tests (~1 min); pytest -m slow: Omnipose + bud model
 python -m napari      # Plugins -> buddy   (never bare 'napari')
-python -m notebook    # run the analysis notebooks (from the repo root)
+python -m notebook    # run the analysis notebooks (in notebooks/)
 ```
 
 The tests download a small test field on first use (release `test-data-v1`) and should finish with no errors.
@@ -77,7 +77,7 @@ The tests download a small test field on first use (release `test-data-v1`) and 
 
 - **bioio OME-TIFF writer.** bioio 3.x split its writers into separate
   packages, so `OmeTiffWriter` now lives in `bioio-ome-tiff`, and
-  `buddy/image.py` imports it as
+  `buddy/reading/readers.py` imports it as
   `from bioio_ome_tiff.writers import OmeTiffWriter`. The installers pull
   this in automatically; if you install by hand, run
   `pip install bioio-ome-tiff`.

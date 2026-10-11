@@ -1,11 +1,12 @@
 [project]
 name = "buddy"
-version = "0.1.0"
+version = "0.2.0"
 authors = [
   {name = "LaToya Vanderbling", email = "latoya.vanderbling@gmail.com"},
 ]
 description = "Wrapper for BigFish spot detection package"
 readme = "README.md"
+license = "BSD-3-Clause"        # see LICENSE
 
 # Omnipose is only tested on 3.8.5–3.10.11 and breaks on 3.11+,
 # so cap Python here. This stops pip from silently building an env
@@ -40,7 +41,6 @@ dependencies = [
 classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent",
-    "License :: OSI Approved :: MIT License",
 ]
 
 [project.optional-dependencies]
@@ -61,11 +61,15 @@ cnn = ["torch", "torchvision", "segmentation-models-pytorch", "tqdm"]
 Homepage = "https://github.com/LaToyaVanderB/buddy"
 
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=77.0"]   # 77: the license = "..." field
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 include-package-data = true
+
+# only the buddy package (and its sub-packages); notebooks/ and tests/ are not part of the install
+[tool.setuptools.packages.find]
+include = ["buddy*"]
 # If you prefer the version to live in buddy/__init__.py, delete the
 # static `version = "0.0.1"` above and uncomment the two blocks below.
 # Make sure buddy/__init__.py actually defines __version__ first, or
@@ -79,5 +83,6 @@ target-version = "py310"
 exclude = ["buddy/config_files", "*.ipynb"]  # notebooks: repeated imports between cells are normal
 
 [tool.ruff.lint]
-# Only real errors for now (syntax errors, undefined names, redefinitions); the style rules come with the refactor
-select = ["E9", "F63", "F7", "F82", "F811"]
+# E = errors, F = pyflakes (undefined names, unused imports), B = likely bugs, I = import order
+select = ["E", "F", "B", "I"]
+ignore = ["E501", "E702", "E741", "E731", "E402", "B006", "B007", "B008", "B905", "B028"]

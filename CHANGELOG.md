@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.2.0 (2026-10-11)
+- Code reorganised by pipeline step into sub-packages: `reading/` (step 1), `segmentation/` (step 2), `spots/` (step 3),
+  `quantification/` (steps 3b/5) and `buds/` (the bud model); `image.py` only ties them together. No change in results
+  (regression tests on the test field).
+- **Import paths changed** for everything except `Experiment`, `Image` and `pipeline`: e.g. `buddy.bud_model` →
+  `buddy.buds.bud_model`, `buddy.bud_training` → `buddy.buds.bud_training`, `buddy.tiff_input` → `buddy.reading.tiff_input`,
+  `buddy.gpu_filters` → `buddy.spots.gpu`. `utils.py` and `Masks_alignment.py` are gone: `spot_assignment` is in
+  `buddy.quantification.spot_assignment`, the alignment functions in `buddy.spots.alignment`.
+- Config: unknown settings are reported in the log, missing essentials (`scale`, `spot_radius`, `sigma`, a channel's
+  `"filter"`) raise a clear error (`config.py`).
+- buddy logs to the `"buddy"` logger instead of configuring Python's root logger (`buddy.log.setup_logging`).
+- Step 2 also writes the raw Omnipose cells (`DIC_masks.tif`), used by the bud-model training.
+- Bud-model training reads the pixel size from each image's `img.json` (`scale`) instead of assuming 65 nm.
+- Removed `Image.save` / `unpickle` (`img.05.pkl`): nothing read it.
+- The notebooks moved from `buddy/` to `notebooks/` in the repo root, with their data files (`budSegmentationData20260311.csv`,
+  its README, `test_data.csv`). Notebook 01 reads the example config from `..\buddy\config_files`; notebook 05 writes
+  your own weights to `notebooks/models/`.
+- Needs napari-buddy ≥ 0.1.1; buddy warns at import when an older napari-buddy is installed.
+
 ## 0.1.0 (2026-10-09)
 
 Added after the analysis in the manuscript; results in the manuscript were obtained with 0.0.1.

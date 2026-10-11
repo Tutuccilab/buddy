@@ -13,11 +13,11 @@ STEP_TIMES lists which img.json times belong to each step (used for time estimat
 """
 import shutil
 import time
-from pathlib import Path
 
 from skimage import io
 
 from buddy.image import Image
+from buddy.paths import ImageFiles
 
 STEP_TIMES = {
     'read': ['01-configure'],
@@ -68,14 +68,14 @@ def read_image(params, exp, mode='serial'):
     my_image.time['processing_mode'] = mode
     my_image.record_settings('read')
     my_image.save_metadata('configure')
-    return Path(my_image.savepath) / 'img.json'
+    return my_image.files.img_json
 
 
 def segment_image(json_file, exp):
     """Step 2: cell masks (DIC + DAPI composite) and nucleus masks (DAPI) with Omnipose, then clean them up."""
     my_image = Image.from_json(json_file, exp)
     my_image.load_data('dapi')                                     # only DAPI is needed here
-    my_image.DIC = io.imread(Path(my_image.savepath) / 'DIC.tif')
+    my_image.DIC = io.imread(my_image.files.dic)
     my_image.create_grgb()                                         # composite used by segment_cells()
 
     _timed(my_image, '02-segment-cells', my_image.segment_cells)
@@ -104,11 +104,10 @@ def spots_image(json_file, exp, mode='serial'):
     _timed(my_image, '04-decompose-spots', my_image.decompose_spots)
     _timed(my_image, 'align', lambda: my_image.align(overwrite_corrected=True))   # -> corrected/ masks
 
-    corrected = Path(my_image.savepath) / 'corrected'
-    corrected.mkdir(parents=True, exist_ok=True)
-    dapi_masks = Path(my_image.savepath) / 'DAPI_masks.tif'
-    if not (corrected / 'DAPI_corrected_masks.tif').is_file() and dapi_masks.is_file():
-        shutil.copy2(dapi_masks, corrected / 'DAPI_corrected_masks.tif')
+    f = ImageFiles(my_image.savepath)
+    f.corrected.mkdir(parents=True, exist_ok=True)
+    if not f.corrected_nuclei.is_file() and f.nucleus_masks.is_file():
+        shutil.copy2(f.nucleus_masks, f.corrected_nuclei)
 
     my_image.time['processing_mode'] = mode
     my_image.record_settings('spots')

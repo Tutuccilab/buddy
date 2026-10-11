@@ -19,3 +19,31 @@ _warnings.filterwarnings("ignore", category=FutureWarning, module=r"bigfish(\.|$
 _warnings.filterwarnings("ignore", message=r"chan to seg' has value range of ZERO")       # Omnipose: the empty channels of the composite
 _warnings.filterwarnings("ignore", message=r".*torch\.load.*weights_only.*", category=FutureWarning)
 _warnings.filterwarnings("ignore", category=DeprecationWarning, module=r"aicsimageio(\.|$)")  # old aicsimageio pulled in by Omnipose
+
+
+# napari-buddy versions that work with this buddy (napari-buddy 0.1.0 imports modules that moved in buddy 0.2.0)
+MIN_NAPARI_BUDDY = (0, 1, 1)
+
+
+def _version_tuple(text):
+    import re
+    return tuple(int(x) for x in re.findall(r"\d+", text)[:3])
+
+
+def _check_napari_buddy():
+    """Warn (once, at import) when the installed napari-buddy is too old for this buddy."""
+    from importlib.metadata import PackageNotFoundError, version
+    try:
+        installed = version("napari-buddy")
+    except PackageNotFoundError:
+        return
+    if _version_tuple(installed) < MIN_NAPARI_BUDDY:
+        _warnings.warn(f"napari-buddy {installed} does not work with this buddy version: update napari-buddy to "
+                       f"{'.'.join(map(str, MIN_NAPARI_BUDDY))} or newer (git pull in the napari-buddy folder, then "
+                       f"pip install -e <napari-buddy folder>)", stacklevel=2)
+
+
+try:
+    _check_napari_buddy()
+except Exception:          # a version check must never stop buddy from importing
+    pass

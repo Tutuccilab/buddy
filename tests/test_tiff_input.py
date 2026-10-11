@@ -6,7 +6,7 @@ import pytest
 import tifffile
 
 from buddy.experiment import Experiment
-from buddy.tiff_input import find_dic_file, is_stack, read_stack
+from buddy.reading.tiff_input import find_dic_file, is_stack, read_stack
 
 Z, Y, X = 5, 64, 48
 

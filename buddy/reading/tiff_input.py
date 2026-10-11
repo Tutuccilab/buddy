@@ -12,7 +12,7 @@ names" the writer stored) are matched against the config's "channels": the "filt
 Axis order comes from the file's metadata; files without it need "tiff_axes" (e.g. "ZCYX") in "parameters".
 Pixel size and z step are taken from the config ("scale"), as for .vsi files.
 
-    from buddy.tiff_input import is_stack, read_stack
+    from buddy.reading.tiff_input import is_stack, read_stack
     info = is_stack(path)                                   # None, or dict(axes, shape, channel_names)
     channels, dic = read_stack(path, exp)                   # {mrna: ZYX array}, 2D DIC or None
 """
@@ -21,6 +21,8 @@ import re
 from pathlib import Path
 
 import numpy as np
+
+log = logging.getLogger("buddy")
 
 STACK_SUFFIXES = (".tif", ".tiff", ".ome.tif", ".ome.tiff")
 
@@ -59,7 +61,7 @@ def is_stack(path):
             return dict(axes=axes, shape=tuple(int(x) for x in shape), channel_names=_channel_names(tf, n_channels),
                         ome=bool(tf.ome_metadata), imagej=bool(tf.imagej_metadata))
     except Exception as e:
-        logging.warning(f"{path.name}: not readable as a TIFF stack ({e})")
+        log.warning(f"{path.name}: not readable as a TIFF stack ({e})")
         return None
 
 
@@ -90,7 +92,7 @@ def read_stack(path, exp, info=None):
         raise ValueError(f"{path} is not a TIFF stack")
     params = getattr(exp, "parameters", {}) or {}
     axes = info["axes"]
-    if "tiff_axes" in params:
+    if params.get("tiff_axes"):
         axes = params["tiff_axes"]
     elif not any(a in axes for a in "CZ"):
         raise ValueError(f"{path.name}: no axis information in the file - set \"tiff_axes\" (e.g. \"ZCYX\") in the config's parameters")
@@ -117,7 +119,7 @@ def read_stack(path, exp, info=None):
     for key, cfg in exp.channels.items():
         mrna = cfg.get("mrna", key)
         channels[mrna] = data[index_of[key]]
-        logging.info(f"......channel {index_of[key]} ({names[index_of[key]] if names else 'no name'}) -> {mrna}, shape {channels[mrna].shape}")
+        log.info(f"......channel {index_of[key]} ({names[index_of[key]] if names else 'no name'}) -> {mrna}, shape {channels[mrna].shape}")
     dic = None
     dic_idx = next((i for i, n in enumerate(names) if n.strip().upper() == dic_name.upper()), None)
     if dic_idx is None and str(params.get("dic_channel", "")).isdigit():
@@ -125,10 +127,10 @@ def read_stack(path, exp, info=None):
     if dic_idx is not None and dic_idx not in index_of.values():
         z = data[dic_idx]
         dic = z[z.shape[0] // 2] if z.shape[0] > 1 else z[0]
-        logging.info(f"......channel {dic_idx} -> DIC (middle z plane)")
+        log.info(f"......channel {dic_idx} -> DIC (middle z plane)")
     unused = [names[i] if names else i for i in range(n_channels) if i not in index_of.values() and i != dic_idx]
     if unused:
-        logging.warning(f"......ignoring channel(s) {unused} (not a 'filter' in the config)")
+        log.warning(f"......ignoring channel(s) {unused} (not a 'filter' in the config)")
     return channels, dic
 
 

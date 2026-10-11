@@ -1,9 +1,8 @@
 """Spot counting per cell / mother / bud on a small made-up image: every number is known in advance."""
 import numpy as np
-import pandas as pd
 import pytest
 
-from buddy.utils import spot_assignment
+from buddy.quantification.spot_assignment import spot_assignment
 
 
 @pytest.fixture

@@ -2,7 +2,7 @@
 import numpy as np
 import pytest
 
-from buddy.Masks_alignment import build_distance_map, estimate_alignment_shift, score_shift
+from buddy.spots.alignment import build_distance_map, estimate_alignment_shift, score_shift
 
 
 def make_cells(n=30, size=600, seed=0):

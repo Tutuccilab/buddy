@@ -12,7 +12,6 @@ import numpy as np
 import pandas as pd
 import pytest
 import tifffile
-
 from conftest import FIELD
 
 CHANNELS = ("ASH1CLB2", "SRL1", "SUN4")

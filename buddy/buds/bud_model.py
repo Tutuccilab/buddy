@@ -42,9 +42,11 @@ import numpy as np
 import pandas as pd
 from scipy import ndimage as ndi
 
-from buddy.dic_orientation import dic_light_direction, rotation_to_reference
+from buddy.buds.dic_orientation import dic_light_direction, rotation_to_reference
 
 # ---------------------------------------------------------------------------------------------
+
+log = logging.getLogger("buddy")
 # settings
 # ---------------------------------------------------------------------------------------------
 MODELS = {   # cut_off: chosen on the gold set (see models/<file>.json)
@@ -53,7 +55,7 @@ MODELS = {   # cut_off: chosen on the gold set (see models/<file>.json)
 }
 # where the weights are downloaded from the first time a model is used
 WEIGHTS_URL = "https://github.com/Tutuccilab/buddy/releases/download/bud-models/{file}"
-DEFAULT_WEIGHTS_DIR = Path(__file__).parent / "models"
+DEFAULT_WEIGHTS_DIR = Path(__file__).parent.parent / "models"   # buddy/models
 
 CROP = 192                 # default crop size around each cell (px); enlarged 2x inside the network
 DOT_SIGMA = 4.0            # the soft dot that marks the cell: gaussian, sigma in px
@@ -114,7 +116,7 @@ def pick_device(use_gpu=True):
     if use_gpu and torch.cuda.is_available():
         return "cuda"
     if use_gpu:
-        logging.warning("no CUDA GPU found (or PyTorch was installed without GPU support) - running on CPU")
+        log.warning("no CUDA GPU found (or PyTorch was installed without GPU support) - running on CPU")
     return "cpu"
 
 
@@ -123,9 +125,9 @@ def pick_device(use_gpu=True):
 # ---------------------------------------------------------------------------------------------
 def build_network(n_input_channels, pretrained_encoder=False):
     """U-Net (ResNet-34 encoder): 2 maps (bud of this cell, this cell) + a 3-class output. Input is enlarged 2x first."""
+    import segmentation_models_pytorch as smp
     import torch.nn as nn
     import torch.nn.functional as F
-    import segmentation_models_pytorch as smp
 
     class BudNet(nn.Module):
         def __init__(self):
@@ -154,7 +156,7 @@ def weights_path(model_name, weights_dir=None):
     if not path.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
         url = WEIGHTS_URL.format(file=file)
-        logging.info(f"downloading bud model weights: {url}")
+        log.info(f"downloading bud model weights: {url}")
         try:
             urllib.request.urlretrieve(url, path)
         except Exception as e:
@@ -188,7 +190,7 @@ class BudModel:
         state = torch.load(weights_file or weights_path(model_name, weights_dir), map_location=device, weights_only=True)
         network.load_state_dict(state)
         network.to(device).eval()
-        logging.info(f"bud model '{model_name}' loaded on {device}")
+        log.info(f"bud model '{model_name}' loaded on {device}")
         return cls(network, model_name, device, cut_off, snap)
 
     # ---- step 1: predict, cell by cell ---------------------------------------------------------

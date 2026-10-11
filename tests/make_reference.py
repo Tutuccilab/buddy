@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from conftest import FIELD                                     # noqa: E402
+from conftest import FIELD  # noqa: E402
 
 from buddy import pipeline
 from buddy.experiment import Experiment

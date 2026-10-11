@@ -2,7 +2,7 @@
 import numpy as np
 import pandas as pd
 
-from buddy.cell_flags import HIGH_ASH, LATE_M, compute_flags
+from buddy.quantification.cell_flags import HIGH_ASH, LATE_M, compute_flags
 
 SETTINGS = dict(fold=8, nucleus_area=0.5, nucleus_intensity=0.7, max_gap_px=10)
 

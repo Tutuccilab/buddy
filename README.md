@@ -61,13 +61,13 @@ Full list of dependencies: `pyproject.toml`. GPU set-up, manual install and trou
 [INSTALL.md](INSTALL.md).
 
 # Typical workflow
-1. Batch process inputs to TIF files: `buddy/01_fish_bulk_processing.ipynb`
+1. Batch process inputs to TIF files: `notebooks/01_fish_bulk_processing.ipynb`
 2. Find good segmentation parameters using Omnipose GUI
-3. Batch segment DIC and DAPI pictures: `buddy/01_fish_bulk_processing.ipynb`
+3. Batch segment DIC and DAPI pictures: `notebooks/01_fish_bulk_processing.ipynb`
 4. Find good spot detection parameters using napari-buddy plugin
    1. Load an img.json file in napari
    2. Tweak spot detection parameters
-5. Batch detect spots, align, **assign buds automatically** and count spots: `buddy/01_fish_bulk_processing.ipynb`
+5. Batch detect spots, align, **assign buds automatically** and count spots: `notebooks/01_fish_bulk_processing.ipynb`
 6. Check the flagged buds (and anything else) in napari, step 4 of the same notebook
 
 Instead of the notebook you can run all steps from napari: **Plugins → napari-buddy → buddy pipeline**
@@ -101,7 +101,7 @@ with a pairing F1 of 0.82 (`with_ASH1CLB2`) and 0.80 (`DIC_DAPI_only`); large bu
 check the flagged cells in napari.
 
 All settings, the flags in napari and the output files: [BUD_MODEL.md](BUD_MODEL.md). How the models were trained
-and evaluated: [methods.md](methods.md). Train your own model: `buddy/05_train_bud_model.ipynb`.
+and evaluated: [methods.md](methods.md). Train your own model: `notebooks/05_train_bud_model.ipynb`.
 
 ## Issues
 
