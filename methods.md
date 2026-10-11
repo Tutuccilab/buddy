@@ -166,6 +166,133 @@ crops were generated from each cell's unique identifier and bounding box, scored
 by eye for cell-cycle phase, and the resulting expert annotations were compared
 against the automatic phase calls.
 
+## Additions to buddy after the analysis
+
+The following were added to the released version of buddy **after** the data in
+this study were analysed. The results above were obtained with Big-FISH on the
+CPU and with manually curated bud annotations; none of the additions below were
+used for them.
+
+### Automatic bud classification
+
+**What the model does.** In budding yeast a daughter cell (the bud) grows out of its mother cell, and
+Omnipose often segments the bud as a separate object. The bud classification step decides, for every
+segmented cell, whether it is unbudded, has a bud, or is itself a bud, and if it has a bud, which pixels
+belong to it. Each bud is then joined to its mother, so that mRNAs can be counted per mother and per bud.
+
+**Input.** For every segmented cell a square image region of 192 × 192 pixels (12.5 × 12.5 µm) centred on
+the cell is cut out, with three layers: the DIC image, the maximum projection of the DAPI (nucleus) stain, and
+a soft dot (Gaussian, σ = 4 pixels) marking the centre of the cell in question. The model is deliberately not
+given the Omnipose outline of the cell: outlines that cut through a bud, or merge two cells, would otherwise
+mislead it. A second version of the model also receives the maximum projection of the *ASH1/CLB2* smFISH
+signal, a transcript that accumulates in the bud during mitosis. Because a DIC image looks different depending
+on the direction of its shading, all DIC regions are first rotated so that the shading falls in the same
+direction. Intensities are scaled per image between the 0.5th and 99.8th percentile; the *ASH1/CLB2* layer is
+also log-transformed so that bright transcription sites do not dominate.
+
+**Network.** The model is a U-Net, a convolutional neural network that outputs one value per pixel, with a
+ResNet-34 encoder initialised from weights pre-trained on everyday photographs (ImageNet) and implemented with
+the segmentation-models-pytorch library. It has three outputs: (i) a map giving, for every pixel, the
+probability that it belongs to the bud of the cell in the centre, (ii) a map of the cell's own body (used only
+during training, where it forces the model to locate the cell from the dot), and (iii) the probability that
+this cell is unbudded, budded, or a bud. The input is enlarged twofold inside the network so that small buds
+are covered by more pixels.
+
+**From per-cell answers to mother–bud pairs.** Each cell "claims" the most confident region of its bud map
+(at least 15 pixels with probability > 0.5). The strength of a claim is the cell's probability of being
+budded multiplied by its mean bud probability over that region. Claims below a cut-off are discarded. When
+two cells claim the same bud (claimed regions overlapping by more than half), both are scored on exactly the
+same pixels and the stronger claim wins. A cell cannot be both a mother and a bud. A claimed region that lies
+mostly (≥ 60%) inside one Omnipose object other than the mother is replaced by that whole object ("snap"): the
+model decides which bud belongs to which mother, and the Omnipose outline, which is usually more complete for
+large buds than the model's bud map, provides the outline. The final prediction is the average of the
+original region and its mirror image along the anti-diagonal, a transformation that keeps the DIC shading
+direction intact. Three situations are flagged for manual checking in napari: two claims within 0.15 of each
+other (close call), accepted claims within 0.1 above the cut-off (weak pair) or rejected claims within 0.1
+below it (possible missed bud), and cells that are at least 90% likely to be a bud but were claimed by no mother.
+
+**Training data.** The models learned from the manual mother–bud annotations made for the analyses in
+this study (step 4 of the pipeline). The images (fields of view) were divided, whole fields at a time, into
+a training set (81 fields), a validation set (10 fields) and a test set that was never used during development
+(20 fields); 21 further fields from one imaging session (22-04-29) were not used, because their initial
+Omnipose segmentations were poor and had to be corrected by hand. The annotations were corrected in two
+rounds before training. First, they were checked against the *ASH1/CLB2* signal in the wild-type strains:
+cells annotated as unbudded but with *ASH1/CLB2* levels at least eight times those of a typical unbudded cell
+in the same image (suggesting a missed bud), and cells annotated with a large bud (> 4 µm²) but G1-like
+*ASH1/CLB2* levels (suggesting two separate cells annotated as a pair); all 232 such cells were re-inspected
+by eye. Second, because the manual annotation misses many small buds (see Evaluation), a model trained on the
+uncorrected annotations was used to find candidate buds: every training cell annotated as unbudded in which an
+early training checkpoint (before the model had learned to reproduce the omissions) saw a bud attached to the
+cell. All 698 candidates were inspected by eye in random order; 294 were real buds and were added to the
+annotation, 216 could not be decided and were left as annotated. The final training set contained 7,391
+Omnipose cells (5,109 unbudded, 1,835 budded, 447 buds). Cells touching the image edge were left out. Small
+Omnipose objects (< 4 µm²) that the segmentation clean-up had discarded and that were not annotated but touch a
+training cell were treated as "ignore regions": they may be buds the annotation missed, so the bud map was not
+graded there. Cells in late mitosis (a bud that already contains its own full-size nucleus) were kept; leaving
+them out, as in an earlier version, made the model miss large buds. For the *ASH1/CLB2* model the *she2* and
+*she3* deletion strains were left out, because in these mutants *ASH1* mRNA is not transported to the bud, so
+the signal would be misleading (4,544 training cells).
+
+**Training.** Each training step drew cells in fixed proportions so that the rare cases were seen often
+enough: 40% budded mothers, 25% unbudded cells touching another cell's bud (where the correct answer is
+"this bud is not mine"), 15% buds and 20% other unbudded cells. Small buds counted more heavily in the loss
+(weight √(700 px / bud area), at most twofold). To make the model robust, the training regions were randomly
+flipped and rotated in ways that keep the DIC shading direction, their brightness and contrast were varied
+(× 0.8–1.25), noise was added to the DIC layer, and the centre dot was moved by up to 2 pixels. The bud and
+cell maps were trained with a combination of per-pixel binary cross-entropy and the Dice overlap score (cell
+map weight 0.5), and the cell class with cross-entropy (weight 0.5). Training ran for 30 rounds (epochs) of
+3,000 cells each (batch size 16, AdamW optimiser, one-cycle learning-rate schedule with a maximum of
+3 × 10⁻⁴). A copy of the model was saved every two epochs.
+
+**Evaluation.** Because the manual annotations themselves contain mistakes, the models were evaluated on a
+separate, carefully re-annotated set of cells from the test fields. Two hundred cells were drawn from the test
+fields (only cells whose Omnipose outline matched the annotated cell, and no *she2*/*she3* cells): 80 budded
+mothers, 20 per bud size class (< 1, 1–2, 2–4 and > 4 µm²), 40 cells where the earlier pipeline or a model
+disagreed with the annotation, and 80 random other cells. These were annotated again by eye in random order,
+seeing only the DIC, DAPI and *ASH1/CLB2* images and the Omnipose outlines, not the earlier annotation or any
+model output; 198 cells could be scored. The agreement with this reference is given as the F1 score for
+mother–bud pairs: the harmonic mean of precision (the fraction of predicted pairs that are correct) and
+recall (the fraction of reference pairs that were found; a pair counts as found when the predicted bud covers
+at least half of the reference bud and the reference bud at least 30% of the predicted one). Every annotated
+cell counts once; because the hard cases were deliberately over-represented, the scores describe this
+difficult set, not a typical image (on the randomly drawn cells alone, 95–97% of the cells were classified
+correctly). 95% confidence intervals were obtained by resampling the cells 1,000 times (bootstrap).
+
+The saved copy (epoch) and the claim cut-off of each model were chosen on this set. To obtain an unbiased
+estimate of the performance, the test fields were split into two halves: the epoch and cut-off were chosen on
+one half and the model scored on the other, and vice versa, so that every cell was scored with a choice made
+on other cells ("2-fold"). The released weights use the epoch and cut-off chosen on all 198 cells (DIC + DAPI
+model: epoch 22, cut-off 0.6; *ASH1/CLB2* model: epoch 16, cut-off 0.5).
+
+| | F1 (95% CI), 2-fold | Precision | Recall | Recall, buds < 1 µm² | 1–2 µm² | 2–4 µm² | > 4 µm² |
+|---|---|---|---|---|---|---|---|
+| Original manual annotation | 0.72 (0.64–0.80) | 0.75 | 0.69 | 0.39 | 0.63 | 0.88 | 0.96 |
+| Model, DIC + DAPI | 0.80 (0.73–0.86) | 0.79 | 0.81 | 0.86 | 0.78 | 0.81 | 0.81 |
+| Model, DIC + DAPI + *ASH1/CLB2* | 0.82 (0.75–0.88) | 0.85 | 0.79 | 0.86 | 0.78 | 0.88 | 0.69 |
+
+Both models recovered more mother–bud pairs than the original manual annotation of the same cells,
+mainly because they find the smallest buds, which the annotation mostly missed; the differences between the
+two models are within the confidence intervals. Large buds remain the weakest class: there the mother–bud
+relation can be confused with two neighbouring cells, and part of a large bud can fall outside the 192-pixel
+region (training with 256-pixel regions did not improve this). The flagged cells are therefore meant to be
+checked by eye. Earlier versions of the models, which received the cell outline instead of the centre dot,
+were trained on the annotations before the second correction round and left late-mitosis cells out of the
+DIC + DAPI model, reached F1 0.68 (DIC + DAPI) and 0.74 (*ASH1/CLB2*) on the same cells with their released settings.
+
+### Processing speed
+
+Background subtraction and the Laplacian-of-Gaussian filtering of spot detection
+were re-implemented in PyTorch so that they can run on a GPU, using the same
+kernels, border handling and integer rounding as Big-FISH. Local-maximum
+detection, thresholding (fixed or automatic) and duplicate removal use Big-FISH's
+own functions. On two test images (four channel stacks at fixed thresholds of 30–80,
+and two with the automatic threshold) this gave identical spots and thresholds
+to Big-FISH. Background-subtracted
+intensities differed by at most one grey level in about 0.01% of voxels. Background
+subtraction is restricted to the in-focus z-range plus a margin of 4σ<sub>z</sub>,
+which leaves the result within that range unchanged. Images can also be processed
+in parallel.
+
 ## Software
 
 Image processing used Big-FISH (spot detection, decomposition, focus and

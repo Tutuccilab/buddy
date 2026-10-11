@@ -1,6 +1,6 @@
 [project]
 name = "buddy"
-version = "0.0.1"
+version = "0.1.0"
 authors = [
   {name = "LaToya Vanderbling", email = "latoya.vanderbling@gmail.com"},
 ]
@@ -30,6 +30,8 @@ dependencies = [
     "matplotlib",
     "pandas",     # notebooks 02-05 build/read the master dataframe
     "tifffile",   # crop-generation notebooks write per-cell TIFFs
+    "segmentation-models-pytorch",   # network of the bud model (bud_model.py); PyTorch comes with omnipose
+    "psutil",     # parallel notebook: picks the number of workers from free memory
     # NOTE: 'pathlib' was removed. It is part of the standard library
     # since Python 3.4; the PyPI backport of the same name is unmaintained
     # and can break installs under modern setuptools.
@@ -43,7 +45,7 @@ classifiers = [
 
 [project.optional-dependencies]
 # Install with: pip install -e ".[test]"
-test = ["pytest"]
+test = ["pytest", "ruff"]
 # The napari viewer + Qt backend. Installed INTO the env so `python -m napari`
 # launches from here instead of a base-conda napari.
 napari = ["napari[pyqt6]"]
@@ -70,3 +72,12 @@ include-package-data = true
 # the build will fail — which is one of the current install snags.
 # [tool.setuptools.dynamic]
 # version = {attr = "buddy.__init__.__version__"}
+
+[tool.ruff]
+line-length = 130
+target-version = "py310"
+exclude = ["buddy/config_files"]
+
+[tool.ruff.lint]
+# Only real errors for now (syntax errors, undefined names, redefinitions); the style rules come with the refactor
+select = ["E9", "F63", "F7", "F82", "F811"]

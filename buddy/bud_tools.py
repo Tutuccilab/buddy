@@ -98,7 +98,9 @@ def assign_buds_to_mothers(dic_masks, bud_masks, bud_value=BUD, border=1):
     bud_cc      : connected-component labelling of the buds.
     """
     dic_masks = np.asarray(dic_masks)
-    bud_cc = cc_label(np.asarray(bud_masks) == bud_value, connectivity=2)
+    # connected bud pixels per DIC cell, so two touching buds of different cells stay separate buds
+    is_bud = np.asarray(bud_masks) == bud_value
+    bud_cc = cc_label(np.where(is_bud, dic_masks.astype(np.int64) + 1, 0), background=0, connectivity=2)
     bud_labeled = np.zeros_like(dic_masks)
     assignments, unassigned = {}, []
 
@@ -108,6 +110,13 @@ def assign_buds_to_mothers(dic_masks, bud_masks, bud_value=BUD, border=1):
         own = dic_masks[comp_mask]
         own = own[own > 0]
         own_label = int(np.bincount(own).argmax()) if own.size else None
+
+        # already linked: the bud carries the label of a cell that also has non-bud (mother) pixels
+        # (e.g. after automatic bud classification, which merges each bud into its mother)
+        if own_label is not None and ((dic_masks == own_label) & (np.asarray(bud_masks) != bud_value)).sum() > comp_mask.sum() // 2:
+            assignments[comp] = (own_label, own_label)
+            bud_labeled[comp_mask] = own_label
+            continue
 
         # region whose neighbours we search: the whole bud cell, else the annotation
         region = (dic_masks == own_label) if own_label is not None else comp_mask

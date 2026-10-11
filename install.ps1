@@ -5,11 +5,13 @@
 # Optional args:
 #   -NapariBuddyPath "..\napari-buddy"   path to the napari-buddy repo
 #   -EnvName "buddy"                        conda env name
+#   -CPU                                    do not install the GPU (CUDA) version of PyTorch
 #   cd buddy 
 
 param(
     [string]$NapariBuddyPath = "..\napari-buddy",
-    [string]$EnvName = "buddy"
+    [string]$EnvName = "buddy",
+    [switch]$CPU          # add -CPU to skip the GPU version of PyTorch
 )
 $ErrorActionPreference = "Stop"
 
@@ -37,8 +39,20 @@ if (Test-Path $NapariBuddyPath) {
     Write-Host "    Install it later with: conda activate $EnvName; pip install -e <path-to-napari-buddy>"
 }
 
+# GPU: pip installs the CPU-only PyTorch by default. With an NVIDIA GPU, swap in the CUDA build so that
+# Omnipose and the bud model run on the GPU (much faster). numpy is re-pinned below 2 afterwards.
+$hasGpu = $null -ne (Get-Command nvidia-smi -ErrorAction SilentlyContinue)
+if ($hasGpu -and -not $CPU) {
+    Write-Host "==> NVIDIA GPU found: installing PyTorch with CUDA support"
+    # --no-deps: only swap torch (+ torchvision), keep everything else; retries: the file is ~2.5 GB
+    conda run --no-capture-output -n $EnvName pip install --force-reinstall --no-deps --no-cache-dir --timeout 120 --retries 10 "torch==2.5.1" "torchvision==0.20.1" --index-url https://download.pytorch.org/whl/cu121
+    conda run --no-capture-output -n $EnvName pip install "numpy<2"
+} else {
+    Write-Host "==> No NVIDIA GPU found (or -CPU given): keeping the CPU version of PyTorch"
+}
+
 Write-Host "==> Smoke test (imports only)"
-conda run --no-capture-output -n $EnvName python -c "import buddy, bigfish, omnipose, bioio_ome_tiff; print('buddy imports OK')"
+conda run --no-capture-output -n $EnvName python -c "import buddy, bigfish, omnipose, bioio_ome_tiff, segmentation_models_pytorch, torch; print('buddy imports OK | GPU available:', torch.cuda.is_available())"
 
 Write-Host ""
 Write-Host "Done. Next steps:"

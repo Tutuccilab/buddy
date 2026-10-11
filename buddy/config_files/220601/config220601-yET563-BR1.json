@@ -25,7 +25,17 @@
         "min_size": 10,
         "nuclei_min_size": 10,
         "min_cell_area": 20,
-        "expand_px": 0
+        "expand_px": 0,
+        "remove_edge_cells": true,
+        "use_gpu": true,
+        "gpu_spot_detection": true
+    },
+    "if_already_processed": "ask",
+    "bud_classification": {
+        "enabled": true,
+        "model": "DIC_DAPI_only",
+        "ash_channel": "ASH1CLB2",
+        "overwrite_manual_corrections": false
     },
     "experiments": [{
         "strain": "YET918",

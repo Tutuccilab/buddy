@@ -1,0 +1,31 @@
+{
+ "model": "with_ASH1CLB2",
+ "model_type": "D",
+ "weights_release": "bud-models-v2",
+ "source_run": "budE_ash epoch 16",
+ "input_channels": [
+  "DIC",
+  "DAPI",
+  "centre dot",
+  "ASH1CLB2"
+ ],
+ "crop_px": 192,
+ "cut_off": 0.5,
+ "snap": true,
+ "trained_on": "train + pairfit fields, labels corrected in the small-bud review (10 Oct 2026), late-M cells included; she2/she3 strains (YET563, YET572) left out",
+ "checkpoint_and_cut_off_chosen_on": "gold set (198 hand-annotated cells of the test fields), pair F1 with snap",
+ "gold_set_pair_F1_at_chosen_settings": 0.846,
+ "gold_set_pair_F1_without_snap": 0.839,
+ "gold_set_2fold": {
+  "pair_F1": 0.819,
+  "precision": 0.846,
+  "recall": 0.794,
+  "note": "epoch + cut-off chosen on one half of the gold fields, scored on the other, and the other way round (honest estimate); snap on"
+ },
+ "recall_by_bud_size_um2": {
+  "<1": 0.93,
+  "1-2": 0.93,
+  "2-4": 1.0,
+  ">4": 0.85
+ }
+}

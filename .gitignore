@@ -37,3 +37,10 @@ Thumbs.db
 *.czi
 *.vsi
 config_local.json
+
+# bud model weights are published as a GitHub release (downloaded automatically), not stored in git
+buddy/models/*.pt
+buddy/bud_training_data/
+
+# test data (a 75 MB crop + reference outputs): downloaded from the GitHub release test-data-v1 by the tests
+tests/data/

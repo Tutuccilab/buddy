@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 # buddy installer for macOS / Linux (run from your Terminal, in the buddy repo root)
 #
-#   bash install.sh [path-to-napari-buddy] [env-name]
+#   bash install.sh [path-to-napari-buddy] [env-name] [auto|cpu]
 #
-# Defaults: napari-buddy path = ../napari-buddy, env name = buddy
+# Defaults: napari-buddy path = ../napari-buddy, env name = buddy, GPU = auto (CUDA PyTorch if an NVIDIA GPU is found)
 
 set -euo pipefail
 
 NAPARI_PATH="${1:-../napari-buddy}"
 ENV_NAME="${2:-buddy}"
+USE_GPU="${3:-auto}"     # auto | cpu
 
 echo "==> Creating conda environment '${ENV_NAME}' (Python 3.10)"
 conda create --name "${ENV_NAME}" python=3.10 -y
@@ -42,8 +43,19 @@ else
     echo "    Install it later with: conda activate ${ENV_NAME} && pip install -e <path-to-napari-buddy>"
 fi
 
+# GPU (Linux + NVIDIA): pip installs a PyTorch build that may lack CUDA. With an NVIDIA GPU, install the
+# CUDA build so Omnipose and the bud model run on the GPU. (macOS has no CUDA: CPU is used.)
+if [ "${USE_GPU}" != "cpu" ] && command -v nvidia-smi >/dev/null 2>&1; then
+    echo "==> NVIDIA GPU found: installing PyTorch with CUDA support"
+    # --no-deps: only swap torch (+ torchvision), keep everything else; retries: the file is ~2.5 GB
+    conda run --no-capture-output -n "${ENV_NAME}" pip install --force-reinstall --no-deps --no-cache-dir --timeout 120 --retries 10 "torch==2.5.1" "torchvision==0.20.1" --index-url https://download.pytorch.org/whl/cu121
+    conda run --no-capture-output -n "${ENV_NAME}" pip install "numpy<2"
+else
+    echo "==> No NVIDIA GPU found (or 'cpu' given): keeping the CPU version of PyTorch"
+fi
+
 echo "==> Smoke test (imports only)"
-conda run --no-capture-output -n "${ENV_NAME}" python -c "import buddy, bigfish, omnipose, bioio_ome_tiff; print('buddy imports OK')"
+conda run --no-capture-output -n "${ENV_NAME}" python -c "import buddy, bigfish, omnipose, bioio_ome_tiff, segmentation_models_pytorch, torch; print('buddy imports OK | GPU available:', torch.cuda.is_available())"
 
 echo ""
 echo "Done. Next steps:"

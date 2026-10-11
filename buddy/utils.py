@@ -1,3 +1,5 @@
+import logging
+from contextlib import contextmanager
 import numpy as np
 from copy import copy
 from skimage.segmentation import expand_labels
@@ -5,9 +7,6 @@ from skimage.measure import regionprops_table
 from skimage.measure import regionprops
 import pandas as pd
 from typing import Tuple
-from copy import copy
-
-from skimage.measure import regionprops
 
 
 # with eternal thanks to the interwebs:
@@ -243,7 +242,7 @@ def remove_cell_masks_with_no_dapi(cell_masks, dapi_masks):
                 break
         if dapi_found == False:
             cells_to_discard.append(label)
-    print(f'removing {len(cells_to_discard)} cells with no dapi signal')
+    logging.info(f'....{len(cells_to_discard)} cell(s) without DAPI signal removed')
     cell_masks_dapi = copy(cell_masks)
     cell_masks_dapi[np.isin(cell_masks, cells_to_discard)] = 0
     return cell_masks_dapi, cells_to_discard
@@ -254,7 +253,7 @@ def remove_dapi_masks_with_no_cell(dapi_masks, cell_masks):
     labels_with_cell = set(np.unique(dapi_masks[cell_masks > 0])) - {0}
     all_labels = set(np.unique(dapi_masks)) - {0}
     discarded = list(all_labels - labels_with_cell)
-    print(f'removing {len(discarded)} DAPI masks with no cell')
+    logging.info(f'....{len(discarded)} DAPI mask(s) without a cell removed')
     dapi_clean = copy(dapi_masks)
     dapi_clean[np.isin(dapi_masks, discarded)] = 0
     return dapi_clean, discarded
@@ -280,3 +279,24 @@ def filter_cells_by_shape(masks, props, min_clump_area=1000, max_clump_eccentric
     masks_discarded[np.isin(masks, list(selected))] = 0
 
     return masks_selected, masks_discarded, len(np.unique(masks_selected)), len(np.unique(masks_discarded)), len(np.unique(masks))
+
+
+@contextmanager
+def keep_logging():
+    """
+    cellpose_omni re-configures Python's root logger when it is imported (own format, own handler), which changes
+    the look of every later buddy message. Import / load Omnipose inside this block to keep buddy's logging as it was.
+    """
+    root = logging.getLogger()
+    handlers, level = list(root.handlers), root.level
+    try:
+        yield
+    finally:
+        for h in list(root.handlers):
+            if h not in handlers:
+                root.removeHandler(h)
+        for h in handlers:
+            if h not in root.handlers:
+                root.addHandler(h)
+        root.setLevel(level)
+        logging.getLogger("cellpose_omni").setLevel(logging.WARNING)      # its model-setup chatter is not buddy output

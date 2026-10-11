@@ -1,4 +1,5 @@
 import logging
+from buddy.utils import keep_logging
 from pathlib import Path
 from skimage import io
 import numpy as np
@@ -14,6 +15,7 @@ from scipy.ndimage import distance_transform_edt, shift as ndi_shift
 from buddy.utils import translate_image, get_regionprops, expand_masks
 from buddy.utils import find_in_focus_indices, find_high_density_patch
 from buddy.utils import spot_assignment
+from buddy import gpu_filters
 
 from .Masks_alignment import *
 from .utils import *
@@ -26,6 +28,25 @@ logging.basicConfig(format='%(asctime)s [%(levelname)s] %(message)s ', datefmt='
 
 def access():
     logging.info("OK")
+
+
+def save_projection(stack_file, stack):
+    """
+    Save the maximum projection of a z-stack as projections/<name>_max.tif next to it. napari-buddy shows
+    these 2D projections when an image is opened (much faster than reading the full stacks).
+    """
+    stack_file = Path(stack_file)
+    if np.ndim(stack) != 3:
+        return
+    folder = stack_file.parent / 'projections'
+    folder.mkdir(exist_ok=True)
+    io.imsave(folder / f'{stack_file.stem}_max.tif', np.asarray(stack).max(axis=0), check_contrast=False)
+
+
+def _md5(path):
+    """Checksum of a file (used to recognise whether a mask file was edited after buddy wrote it)."""
+    import hashlib
+    return hashlib.md5(Path(path).read_bytes()).hexdigest()
 
 
 class Image:
@@ -67,6 +88,7 @@ class Image:
         if 'savepath' not in img:
             try:
                 stem = re.sub(r'_CY[A-Z0-9\s,._]+DAPI', '', Path(img['vsi_file']).stem)
+                stem = re.sub(r'\.ome$', '', stem)              # foo.ome.tif -> foo
                 self.stem = stem
                 self.savepath = str(Path(exp.outputdir) / stem)
                 Path(self.savepath).mkdir(parents=True, exist_ok=True)
@@ -92,12 +114,26 @@ class Image:
         return cls(exp, params)
 
     def read_cells(self):
-        logging.info(f'reading cell image: {self.cell_file}')
-        self.cells  = io.imread(Path(self.experiment.inputdir) / self.cell_file)
+        if getattr(self, 'cell_file', None) is None and getattr(self, '_dic_from_stack', None) is not None:
+            logging.info('cell image: the DIC channel of the TIFF stack')
+            self.cells = self._dic_from_stack
+        else:
+            logging.info(f'reading cell image: {self.cell_file}')
+            self.cells  = io.imread(Path(self.experiment.inputdir) / self.cell_file)
         self.DIC = self.cells   # create_grgb() / align() read self.DIC
 
 
     def read_image(self):
+        """The fluorescence channels: from the .vsi file, or from a multi-page TIFF (see buddy/tiff_input.py)."""
+        if str(self.vsi_file).lower().endswith(('.tif', '.tiff')):
+            from buddy.tiff_input import read_stack
+            logging.info(f'reading fluorescence image (TIFF stack): {self.vsi_file}')
+            channels, self._dic_from_stack = read_stack(Path(self.experiment.inputdir) / self.vsi_file, self.experiment)
+            self.mrna = {mrna: {"data": data} for mrna, data in channels.items()}
+            for mrna in self.mrna:
+                if mrna != 'DAPI':
+                    self.results[mrna] = {}
+            return
         # heavy import (starts the Bio-Formats Java bridge); load only when reading a VSI
         from bioio import BioImage
         import bioio_bioformats
@@ -169,6 +205,9 @@ class Image:
             for ch in self.experiment.channels.keys():
                 self.mrna[ch] = {}
                 self.mrna[ch]['data'] = io.imread(Path(self.savepath) / f'{ch}.tif')
+        elif layer == 'dapi':
+            # only the DAPI stack (all that segmentation needs; much faster than reading every channel)
+            self.mrna = {'DAPI': {'data': io.imread(Path(self.savepath) / 'DAPI.tif')}}
         elif layer =='spots':
             for ch in self.experiment.channels.keys():
                 if ch !='DAPI':
@@ -221,9 +260,15 @@ class Image:
         Parameters
         ----------
         overwrite_corrected : bool
-            If True, also overwrite corrected/DIC_corrected_masks.tif (what
-            `assign_spots` reads) with the shifted cell masks. If False, only
-            aligned_*.tif copies are written and assign_spots is unaffected.
+            If True, also update corrected/DIC_corrected_masks.tif (what
+            `assign_spots` reads). If it does not exist yet, it becomes the shifted
+            Omnipose masks. If it exists and was aligned before (e.g. corrected by
+            hand in napari), it is only moved by the change in shift since then
+            (normally none), so running this step again never shifts it twice.
+            If False, only aligned_*.tif copies are written.
+
+        The shift is always estimated on the Omnipose masks (DIC_masks_pp.tif, DIC
+        frame) with a fixed random seed, so it is the same every time it is run.
         n_iter, max_shift, radius, cutoff :
             Search parameters passed through to estimate_alignment_shift.
         """
@@ -246,12 +291,11 @@ class Image:
         spots = np.concatenate(spots).astype(float)
 
         # --- 2. load the DIC-frame layers -------------------------------------
-        # cell mask: prefer the manually corrected one, fall back to pp
-        cell_masks = self._imread_or_none('corrected', 'DIC_corrected_masks.tif')
-        cell_source = 'corrected'
-        if cell_masks is None:
-            cell_masks = self._imread_or_none('DIC_masks_pp.tif')
-            cell_source = 'pp'
+        # always the Omnipose masks (DIC frame): corrected/ masks may already be in the
+        # fluorescence frame after an earlier run, and shifting those again would move them twice
+        previous = self.results.get('alignment')
+        cell_masks = self._imread_or_none('DIC_masks_pp.tif')
+        cell_source = 'pp'
         if cell_masks is None:
             logging.warning("..no cell masks found, skipping alignment")
             return
@@ -272,7 +316,8 @@ class Image:
         # --- 4. estimate the shift from spots -> cell masks -------------------
         mask_shift, spot_shift = estimate_alignment_shift(
             spots, cell_masks,
-            n_iter=n_iter, max_shift=max_shift, radius=radius, cutoff=cutoff
+            n_iter=n_iter, max_shift=max_shift, radius=radius, cutoff=cutoff,
+            rng=np.random.default_rng(0)        # same shift every run
         )
         dy, dx = mask_shift
         logging.info("..spots->mask shift %s, applying (dy=%d, dx=%d) to DIC + cell masks "
@@ -290,20 +335,137 @@ class Image:
         # --- 5. apply the shift to the cell masks and the DIC image -----------
         self.cell_masks_aligned = ndi_shift(cell_masks, shift=(dy, dx), order=0,
                                             mode='constant', cval=0)
-        io.imsave(Path(self.savepath, 'aligned_DIC_masks.tif'), self.cell_masks_aligned)
+        io.imsave(Path(self.savepath, 'aligned_DIC_masks.tif'), self.cell_masks_aligned, check_contrast=False)
 
         if dic is not None:
             self.aligned_DIC = ndi_shift(dic, shift=(dy, dx), order=0,
                                          mode='constant', cval=0)
-            io.imsave(Path(self.savepath, 'aligned_DIC.tif'), self.aligned_DIC)
+            io.imsave(Path(self.savepath, 'aligned_DIC.tif'), self.aligned_DIC, check_contrast=False)
 
-        # --- 6. optionally overwrite the corrected cell mask (assign_spots reads it)
+        # --- 6. optionally update the corrected cell mask (assign_spots reads it)
         if overwrite_corrected:
             corrected_dir = Path(self.savepath) / 'corrected'
             corrected_dir.mkdir(parents=True, exist_ok=True)
             dst = corrected_dir / 'DIC_corrected_masks.tif'
-            io.imsave(dst, self.cell_masks_aligned)
-            logging.info("..overwrote corrected cell masks with aligned version")
+            if not dst.is_file():
+                io.imsave(dst, self.cell_masks_aligned, check_contrast=False)
+                logging.info("..wrote aligned cell masks to corrected/")
+            elif previous is not None and previous.get('cell_mask_source') == 'pp':
+                # already in the fluorescence frame: move only by the change in shift (normally 0)
+                ddy, ddx = dy - previous['mask_shift'][0], dx - previous['mask_shift'][1]
+                if ddy or ddx:
+                    corrected = self._pad_to(io.imread(dst), target_h, target_w)
+                    io.imsave(dst, ndi_shift(corrected, shift=(ddy, ddx), order=0, mode='constant', cval=0), check_contrast=False)
+                    logging.info(f"..moved corrected cell masks by the change in shift ({ddy}, {ddx})")
+                else:
+                    logging.info("..corrected cell masks already aligned, left as they are")
+            elif previous is None:
+                # corrected masks made before any alignment (DIC frame): shift them like the pp masks
+                corrected = self._pad_to(io.imread(dst), target_h, target_w)
+                io.imsave(dst, ndi_shift(corrected, shift=(dy, dx), order=0, mode='constant', cval=0), check_contrast=False)
+                logging.info("..shifted existing corrected cell masks into the fluorescence frame")
+            else:
+                logging.warning("..corrected/DIC_corrected_masks.tif was aligned by an older buddy version "
+                                "(shift relative to earlier corrected masks) - left as it is; delete it to rebuild "
+                                "it from the Omnipose masks")
+
+
+    def classify_buds(self):
+        """
+        Automatic mother/bud assignment with the trained bud model (see buddy/bud_model.py).
+        Run after align(), before assign_spots(). Settings: "bud_classification" in the config file.
+
+        Uses the Omnipose cells (DIC_masks_pp.tif) moved into the fluorescence frame with the shift
+        found by align(), the aligned DIC, the DAPI max projection and - for the "with_ASH1CLB2"
+        model - the ASH1/CLB2 max projection. Writes:
+          corrected/DIC_corrected_masks.tif  cells, each bud merged into its mother (same label)
+          corrected/bud_corrected_masks.tif  1 = bud, 2 = background, 3 = mother
+          bud_flags.csv                      cells worth checking in napari (with the reason)
+          bud_pairs.csv, bud_model_cells.csv the pairs found / the model output per cell
+        Bud masks you corrected by hand are never overwritten (unless "overwrite_manual_corrections": true).
+        """
+        settings = self.experiment.bud_classification
+        corrected = Path(self.savepath) / 'corrected'
+        # a bud mask that is not exactly the file the model wrote last time was made or edited by hand
+        bud_file = corrected / 'bud_corrected_masks.tif'
+        written_by_model = self.results.get('bud_classification', {}).get('bud_mask_md5')
+        if bud_file.is_file() and _md5(bud_file) != written_by_model and not settings['overwrite_manual_corrections']:
+            logging.warning('..corrected/bud_corrected_masks.tif was made or edited by hand - not overwritten '
+                            '(set "overwrite_manual_corrections": true to replace it)')
+            return
+        model = getattr(self.experiment, 'bud_model', None)
+        if model is None:
+            self.experiment.init_bud_model()
+            model = self.experiment.bud_model
+        logging.info(f'classifying buds (model: {model.name})')
+
+        # Omnipose cells and DIC, in the fluorescence frame (same shift and canvas as align())
+        alignment = self.results.get('alignment')
+        if alignment is None:
+            logging.warning('..no alignment found - run align() first; skipping bud classification')
+            return
+        h, w = alignment['target_shape']
+        dy, dx = alignment['mask_shift']
+        cells = self._pad_to(io.imread(Path(self.savepath) / 'DIC_masks_pp.tif'), h, w)
+        cells = ndi_shift(cells, shift=(dy, dx), order=0, mode='constant', cval=0)
+        dic = self._imread_or_none('aligned_DIC.tif')
+        if dic is None:
+            dic = ndi_shift(self._pad_to(io.imread(Path(self.savepath) / 'DIC.tif'), h, w), shift=(dy, dx), order=0)
+
+        def max_projection(channel):
+            if getattr(self, 'mrna', None) and channel in self.mrna and 'data' in self.mrna[channel]:
+                return np.max(self.mrna[channel]['data'], axis=0)
+            return np.max(io.imread(Path(self.savepath) / f'{channel}.tif'), axis=0)
+
+        dapi = max_projection('DAPI')
+        ash = max_projection(settings['ash_channel']) if model.uses_ash else None
+
+        result = model.classify(dic, dapi, cells, ash)
+
+        corrected.mkdir(parents=True, exist_ok=True)
+        io.imsave(corrected / 'DIC_corrected_masks.tif', result['cell_masks'].astype(np.uint16), check_contrast=False)
+        io.imsave(bud_file, result['bud_masks'], check_contrast=False)
+        result['flags'].to_csv(Path(self.savepath) / 'bud_flags.csv', index=False)
+        result['pairs'].to_csv(Path(self.savepath) / 'bud_pairs.csv', index=False)
+        result['cells'].to_csv(Path(self.savepath) / 'bud_model_cells.csv', index=False)
+
+        self.results['bud_classification'] = {
+            'model': model.name,
+            'cut_off': model.cut_off,
+            'device': model.device,
+            'dic_rotation_k': int(result['dic_rotation']),
+            'n_cells': int(len(result['cells'])),
+            'n_pairs': int(len(result['pairs'])),
+            'n_flags': int(len(result['flags'])),
+            'bud_mask_md5': _md5(bud_file),      # lets a later run recognise hand-made edits
+        }
+        logging.info(f"..{len(result['pairs'])} mother-bud pairs, {len(result['flags'])} cells flagged for checking")
+
+
+    def flag_cells(self):
+        """
+        Flags for napari (buddy/cell_flags.py): unbudded cells with high ASH1/CLB2 - late-M pairs and possible
+        newborn daughters / early-S cells with an unmarked bud. Run after assign_spots(). Writes cell_flags.csv
+        (shown in napari's 'check these buds' layer). Changes nothing else. Settings: "cell_flags" in the config.
+        """
+        from buddy.cell_flags import compute_flags
+        settings = dict(self.experiment.cell_flags)
+        out = Path(self.savepath) / 'cell_flags.csv'
+        if not settings['enabled']:
+            return
+        ch = settings['ash_channel'] or self.experiment.bud_classification['ash_channel']
+        table = Path(self.savepath) / f'{ch}.csv'
+        masks = Path(self.savepath) / 'corrected' / 'DIC_corrected_masks.tif'
+        if not table.is_file() or not masks.is_file():
+            logging.info(f'..no {ch} channel counts - no cell flags')
+            if out.is_file():
+                out.unlink()
+            return
+        flags = compute_flags(pd.read_csv(table), io.imread(masks), settings)
+        flags.to_csv(out, index=False)
+        self.results['cell_flags'] = {'ash_channel': ch, 'n_flags': int(len(flags)),
+                                      **{k: settings[k] for k in ('fold', 'nucleus_area', 'nucleus_intensity', 'max_gap_px')}}
+        logging.info(f'..{len(flags)} cells flagged for high {ch} (cell_flags.csv)')
 
 
     def create_grgb(self):
@@ -321,13 +483,25 @@ class Image:
             data = self.mrna[ch]['data']
             savepath = Path(self.savepath) / f'{ch}.tif'
             OmeTiffWriter.save(data, savepath, dim_order="ZYX", channel_names=[ch])
+            save_projection(savepath, data)          # 2D projection for fast viewing in napari
             logging.info(f'..saving {ch} channel to {savepath}')
 
         # cell channel
         data = self.cells
         savepath = Path(self.savepath) / 'DIC.tif'
-        io.imsave(savepath, data)
+        io.imsave(savepath, data, check_contrast=False)
         logging.info(f'..saving DIC channel to {savepath}')
+
+
+    def record_settings(self, step):
+        """
+        Record in img.json (results -> settings -> step) the config settings this step used ('read',
+        'segment' or 'spots'), so a later run can tell whether the image is already processed with the same
+        settings (see buddy/rerun_check.py). Also updates the 'parameters' saved in img.json to the current config.
+        """
+        from buddy.rerun_check import step_settings
+        self.results.setdefault('settings', {})[step] = step_settings(self.experiment, step)
+        self.parameters = dict(self.experiment.parameters)
 
 
     def save_metadata(self, stage):
@@ -367,7 +541,8 @@ class Image:
     # redo for list of images to avoid loading the models for each image
     def segment_cells(self):
         # heavy import (pulls in torch); load only when segmenting
-        from cellpose_omni import models
+        with keep_logging():
+            from cellpose_omni import models
         logging.info(f'segmenting DIC image')
 
         # reuse the model loaded by Experiment.init_omnipose() if available,
@@ -436,13 +611,14 @@ class Image:
         self.segmentation['cells'] = params
         self.segmentation['cells']['model_type'] = model_type
         maskfile_latest = Path(self.savepath) / f'DIC_masks.model={model_type}_chan={str(params["channels"]).replace(" ", "")}_diameter={params["diameter"]}_minsize={params["min_size"]}_mask={params["mask_threshold"]}_flow={params["flow_threshold"]}.tif'
-        io.imsave(maskfile_latest, mask)
+        io.imsave(maskfile_latest, mask, check_contrast=False)
         logging.info(f"writing cell mask to {maskfile_latest}")
 
 
     def segment_dapi(self):
         # heavy import (pulls in torch); load only when segmenting
-        from cellpose_omni import models
+        with keep_logging():
+            from cellpose_omni import models
         logging.info(f'segmenting DAPI image')
 
         # check if the object contains the grgb data,
@@ -499,9 +675,9 @@ class Image:
 
 
         maskfile_latest = Path(self.savepath) / f'DAPI_masks_model={model_type}_chan={str(params["channels"]).replace(" ", "")}_diameter={params["diameter"]}_minsize={params["min_size"]}_mask={params["mask_threshold"]}_flow={params["flow_threshold"]}.tif'
-        io.imsave(maskfile_latest, mask)
+        io.imsave(maskfile_latest, mask, check_contrast=False)
         cellmaskfile = Path(self.savepath) / 'DAPI_masks.tif'
-        io.imsave(cellmaskfile, mask)
+        io.imsave(cellmaskfile, mask, check_contrast=False)
         logging.info(f"writing DAPI mask to {maskfile_latest}")
 
 
@@ -511,7 +687,9 @@ class Image:
         # values actually used are recorded in img.json's segmentation block.
         min_cell_area = self.experiment.parameters.get('min_cell_area', 20)
         expand_px     = self.experiment.parameters.get('expand_px', 0)
-        logging.info(f'postprocessing masks (min_cell_area={min_cell_area}, expand_px={expand_px})')
+        remove_edge   = bool(self.experiment.parameters.get('remove_edge_cells', False))
+        logging.info(f'postprocessing masks (min_cell_area={min_cell_area}, expand_px={expand_px}, '
+                     f'remove_edge_cells={remove_edge})')
 
         logging.info(f'..removing cell masks with no DAPI')
         self.cell_masks_with_dapi = remove_cell_masks_with_no_dapi(self.cell_masks, self.dapi_masks)[0]
@@ -520,9 +698,18 @@ class Image:
         self.regionprops = get_regionprops(self.cell_masks)
         self.cell_masks_by_area = filter_cells_by_area(self.cell_masks_with_dapi, self.regionprops, min_cell_area=min_cell_area)[0]
 
+        n_edge = 0
+        if remove_edge:
+            # cells cut off by the image border are incomplete (too few RNAs, bud possibly outside the image)
+            from skimage.segmentation import clear_border
+            before = set(np.unique(self.cell_masks_by_area)) - {0}
+            self.cell_masks_by_area = clear_border(self.cell_masks_by_area)
+            n_edge = len(before - set(np.unique(self.cell_masks_by_area)))
+            logging.info(f'..removed {n_edge} cell(s) touching the image edge')
+
         logging.info(f'..removing DAPI masks with no cell')
         self.dapi_masks, _ = remove_dapi_masks_with_no_cell(self.dapi_masks, self.cell_masks_by_area)
-        io.imsave(Path(self.savepath) / 'DAPI_masks.tif', self.dapi_masks)
+        io.imsave(Path(self.savepath) / 'DAPI_masks.tif', self.dapi_masks, check_contrast=False)
 
         #logging.info(f'..discarding large, round masks (min size 1000, min excentricity 0.8')
         #self.cell_masks_by_shape = filter_cells_by_shape(self.cell_masks_by_area, self.regionprops,
@@ -536,10 +723,11 @@ class Image:
         # record what was actually used so it lands in img.json
         if not hasattr(self, 'segmentation'):
             self.segmentation = {'cells': {}, 'dapi': {}}
-        self.segmentation['postprocess'] = {'min_cell_area': min_cell_area, 'expand_px': expand_px}
+        self.segmentation['postprocess'] = {'min_cell_area': min_cell_area, 'expand_px': expand_px,
+                                            'remove_edge_cells': remove_edge, 'edge_cells_removed': n_edge}
 
         cellmaskfile = Path(self.savepath) / 'DIC_masks_pp.tif'
-        io.imsave(cellmaskfile, self.cell_masks_by_area)
+        io.imsave(cellmaskfile, self.cell_masks_by_area, check_contrast=False)
 
 
     def find_focus(self):
@@ -587,9 +775,54 @@ class Image:
 
 
     def filter_channel(self, ch):
+        """
+        Background removal (Big-FISH remove_background_gaussian), only on the in-focus slices found by
+        find_focus() plus a margin as wide as the Gaussian's reach in z, so the result inside the in-focus
+        range is identical to filtering the whole stack (spot detection only uses those slices).
+        Slices outside the range stay 0 - exactly as they were saved before.
+        """
         data = self.mrna.get(ch)
-        data['filtered'] = remove_background_gaussian(data['data'], sigma=self.experiment.parameters['sigma'])
-        logging.info(f'..channel {ch}')
+        sigma = self.experiment.parameters['sigma']
+        n_z = data['data'].shape[0]
+        ifx_1, ifx_2 = self.results.get(ch, {}).get('ifx_1', 0), self.results.get(ch, {}).get('ifx_2', n_z)
+        margin = int(4 * sigma[0] + 0.5) + 1          # Gaussian kernel reach in z (truncate = 4 sigma) + 1
+        lo, hi = max(ifx_1 - margin, 0), min(ifx_2 + margin, n_z)
+        filtered = np.zeros_like(data['data'])
+        filtered[ifx_1:ifx_2] = self._run_on_gpu_or_cpu(
+            ch, 'filter',
+            gpu=lambda device: gpu_filters.remove_background(data['data'][lo:hi], sigma, device=device),
+            cpu=lambda: remove_background_gaussian(data['data'][lo:hi], sigma=sigma))[ifx_1 - lo:ifx_2 - lo]
+        data['filtered'] = filtered
+        logging.info(f'..channel {ch} (slices {ifx_1}-{ifx_2}, {self.results[ch]["filter_backend"]})')
+
+
+    def _gpu_device(self):
+        """'cuda' when the GPU versions of the background filter and spot detection should be used, else None.
+        Controlled by "gpu_spot_detection" in the parameters block (default true) and "use_gpu"."""
+        if not hasattr(self, '_filter_device'):
+            from buddy.experiment import gpu_available
+            wanted = self.experiment.parameters.get('gpu_spot_detection', True) and getattr(self.experiment, 'use_gpu', True)
+            self._filter_device = 'cuda' if wanted and gpu_available(True) else None
+        return self._filter_device
+
+
+    def _run_on_gpu_or_cpu(self, ch, step, gpu, cpu):
+        """Run gpu(device) when a GPU is available (falls back to Big-FISH on the CPU if the GPU runs out of
+        memory), otherwise cpu(). Records which one was used in results[ch][f'{step}_backend']."""
+        self.results.setdefault(ch, {})
+        device = self._gpu_device() if gpu is not None else None
+        if device is not None:
+            try:
+                result = gpu(device)
+                self.results[ch][f'{step}_backend'] = 'gpu'
+                return result
+            except RuntimeError as e:                       # includes torch.cuda.OutOfMemoryError
+                import torch
+                torch.cuda.empty_cache()
+                logging.warning(f'..channel {ch}: GPU {step} failed ({e.__class__.__name__}), using Big-FISH on the CPU '
+                                f'(lower buddy.gpu_filters.BLOCK_ROWS if the GPU runs out of memory)')
+        self.results[ch][f'{step}_backend'] = 'cpu (big-fish)'
+        return cpu()
 
 
     def detect_spots(self):
@@ -604,20 +837,22 @@ class Image:
         mrna_filtered = self.mrna.get(ch)['filtered']
         ifx_1, ifx_2 = self.results[ch]['ifx_1'], self.results[ch]['ifx_2']
         mrna_filtered_selected = mrna_filtered[ifx_1:ifx_2, ...]
-        spots, threshold = detect_spots(
-            mrna_filtered_selected,
-            threshold=self.experiment.channels[ch]['threshold'],
-            voxel_size=self.experiment.parameters['scale'],
-            spot_radius=self.experiment.parameters['spot_radius'],
-            return_threshold=True
-        )
+        threshold = self.experiment.channels[ch]['threshold']
+        scale, spot_radius = self.experiment.parameters['scale'], self.experiment.parameters['spot_radius']
+        # threshold None = Big-FISH's automatic threshold (both versions)
+        spots, threshold = self._run_on_gpu_or_cpu(
+            ch, 'detection',
+            gpu=lambda device: gpu_filters.detect_spots(mrna_filtered_selected, threshold, scale, spot_radius, device=device),
+            cpu=lambda: detect_spots(mrna_filtered_selected, threshold=threshold, voxel_size=scale,
+                                     spot_radius=spot_radius, return_threshold=True))
         self.results[ch]['threshold'] = threshold
 
         # always elegant:
         filtered_padded_intensities = np.concatenate((np.zeros([ifx_1, mrna_data.shape[1], mrna_data.shape[2]]).astype(
             'uint16'), mrna_filtered_selected, np.zeros(
             [mrna_data.shape[0] - ifx_2, mrna_data.shape[1], mrna_data.shape[2]]).astype('uint16')), axis=0)
-        io.imsave(Path(self.savepath) / f'{ch}_filtered.tif', filtered_padded_intensities)
+        io.imsave(Path(self.savepath) / f'{ch}_filtered.tif', filtered_padded_intensities, check_contrast=False)
+        save_projection(Path(self.savepath) / f'{ch}_filtered.tif', mrna_filtered_selected)   # for napari
 
         # restore z-level
         spots[:, 0] = spots[:, 0] + ifx_1
@@ -644,7 +879,7 @@ class Image:
         self.mrna.get(ch)['spots'] = spots_with_intensities
         self.results[ch]['nr_spots'] = len(spots)
 
-        logging.info(f'..channel {ch}: found {len(spots)} spots, threshold={threshold}')
+        logging.info(f'..channel {ch}: found {len(spots)} spots, threshold={threshold} ({self.results[ch]["detection_backend"]})')
 
 
     def decompose_spots(self):
@@ -664,15 +899,17 @@ class Image:
         #spots[:,0] -= ifx_1
 
         # we should probably only do spot decomposition on spots that are in cells
-        decomp_spots, dense_regions, reference_spot = decompose_dense(
-            mrna_data_selected,
-            spots,
-            voxel_size=self.experiment.parameters['scale'],
-            spot_radius=self.experiment.parameters['spot_radius'],
-            alpha=0.5,  # alpha impacts the number of spots per candidate region
-            beta=2,  # beta impacts the number of candidate regions to decompose
-            gamma=1  # gamma the filtering step to denoise the image
-        )
+        scale, spot_radius = self.experiment.parameters['scale'], self.experiment.parameters['spot_radius']
+        settings = dict(alpha=0.5,  # alpha impacts the number of spots per candidate region
+                        beta=2,     # beta impacts the number of candidate regions to decompose
+                        gamma=1)    # gamma the filtering step to denoise the image
+        # the denoising filter (most of the time) runs on the GPU when available; the rest is Big-FISH
+        decomp_spots, dense_regions, reference_spot = self._run_on_gpu_or_cpu(
+            ch, 'decomposition',
+            gpu=lambda device: gpu_filters.decompose_dense(mrna_data_selected, spots, scale, spot_radius,
+                                                           device=device, **settings),
+            cpu=lambda: decompose_dense(mrna_data_selected, spots, voxel_size=scale, spot_radius=spot_radius,
+                                        **settings))
 
         self.mrna.get(ch)['decomposed_spots'] = decomp_spots
         self.mrna.get(ch)['dense_regions'] = dense_regions
@@ -680,7 +917,7 @@ class Image:
 
         np.save(Path(self.savepath) / f'{ch}_decomposed_spots.npy', decomp_spots)
         np.save(Path(self.savepath) / f'{ch}_dense_regions.npy', dense_regions)
-        io.imsave(Path(self.savepath) / f'{ch}_reference_spot.tif', reference_spot)
+        io.imsave(Path(self.savepath) / f'{ch}_reference_spot.tif', reference_spot, check_contrast=False)
 
         logging.info(f'..channel {ch}: found {len(dense_regions)} dense regions, {len(decomp_spots)} decomposed spots (from {len(spots)}')
 
@@ -721,4 +958,4 @@ class Image:
         df.rename(columns={'label': 'image_cell_id'}, inplace=True)
         
         df.to_csv(Path(self.savepath) / f'{ch}.csv', index=False)
-        logging.info(f'..channel {ch}: saving results to {self.savepath}/{ch}.csv beep')
+        logging.info(f'..channel {ch}: saving results to {self.savepath}/{ch}.csv')
