@@ -76,7 +76,7 @@ include-package-data = true
 [tool.ruff]
 line-length = 130
 target-version = "py310"
-exclude = ["buddy/config_files"]
+exclude = ["buddy/config_files", "*.ipynb"]  # notebooks: repeated imports between cells are normal
 
 [tool.ruff.lint]
 # Only real errors for now (syntax errors, undefined names, redefinitions); the style rules come with the refactor
