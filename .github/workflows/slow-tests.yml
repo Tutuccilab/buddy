@@ -38,7 +38,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: tests/data
-          key: test-data-v1
+          key: test-data-v1-${{ runner.os }}-b   # "-b": the first cache was saved empty (before the release existed)
       - name: Cache the model weights (bud model from release bud-models, Omnipose models)
         uses: actions/cache@v4
         with:
@@ -46,5 +46,18 @@ jobs:
             buddy/models/*.pt
             ~/.cellpose/models
           key: models-bud-models-${{ runner.os }}
+      - name: Download the test data and the bud-model weights (with the workflow's token, so a private repository works too)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ ! -f tests/data/field_A/img.json ]; then
+            gh release download test-data-v1 --pattern field_A.zip --dir "$RUNNER_TEMP" --clobber
+            mkdir -p tests/data
+            python -c "import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall('tests/data')" "$RUNNER_TEMP/field_A.zip"
+          fi
+          gh release download bud-models --pattern "*.pt" --dir buddy/models --skip-existing
       - name: Slow tests (Omnipose + bud model)
+        env:
+          BUDDY_REQUIRE_TEST_DATA: "1"
         run: pytest -m slow -v --durations=0

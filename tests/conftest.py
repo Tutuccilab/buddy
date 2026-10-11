@@ -35,17 +35,24 @@ def field_a_available():
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         with urllib.request.urlopen(TEST_DATA_URL, timeout=120) as r:
             zipfile.ZipFile(io.BytesIO(r.read())).extractall(DATA_DIR)
-    except Exception as e:                     # no network, no release yet, ...
-        print(f"test data not available ({e})")
+    except Exception as e:                     # no network, no release yet, a private repository, ...
+        _DOWNLOAD_ERROR.append(f"{type(e).__name__}: {e}")
         return False
     return (FIELD / "img.json").is_file()
+
+
+_DOWNLOAD_ERROR = []
 
 
 @pytest.fixture(scope="session")
 def field_a():
     """Path of the test field (skips the test when the data is not available)."""
     if not field_a_available():
-        pytest.skip("test data (tests/data/field_A) not available: run tests/make_test_data.py or set TEST_DATA_URL")
+        why = f" (download failed: {_DOWNLOAD_ERROR[-1]})" if _DOWNLOAD_ERROR else ""
+        message = f"test data (tests/data/field_A) not available{why}: run tests/make_test_data.py or set TEST_DATA_URL"
+        if os.environ.get("BUDDY_REQUIRE_TEST_DATA"):   # set in the GitHub workflows: no silent green run
+            pytest.fail(message)
+        pytest.skip(message)
     return FIELD
 
 
