@@ -1,4 +1,4 @@
-# buddy — Installation & Usage Tutorial
+# buddy — Tutorial
 
 A practical, step-by-step guide to installing the smFISH pipeline (`buddy` +
 `napari-buddy`) and running a full analysis, from raw `.vsi` images to a per-cell
@@ -14,23 +14,11 @@ detection parameters, correcting masks, and annotating and reassigning buds.
 
 ## Part 1 — Installation
 
-### 1.1 Prerequisites
+Install buddy and napari-buddy as described in [INSTALL.md](INSTALL.md): one command on Windows, macOS and
+Linux; GPU set-up, manual install and troubleshooting are there too. You need Anaconda or Miniconda and Git;
+Python 3.10 is installed for you, internet is needed on the first run, and a GPU is optional.
 
-- **Anaconda or Miniconda** (<https://docs.conda.io/en/latest/miniconda.html>).
-- **Git**, to clone the two repositories.
-- **Python 3.10** — pinned for you by the install step. Do **not** use 3.11+:
-  Omnipose (segmentation) is only tested up to 3.10.11 and breaks on newer
-  Python.
-- **Internet on first run.** The first time you open an Olympus `.vsi` image,
-  Bio-Formats downloads a Java runtime automatically (once; cached afterwards).
-- **A GPU is optional** — Omnipose and the bud model run on CPU, just slower. With an
-  NVIDIA GPU the install script installs the GPU version of PyTorch automatically.
-- **Disk:** a few GB for the environment, the Java runtime and the model weights
-  that download on first use.
-
-Supported platforms: Windows 10/11, macOS (Intel and Apple Silicon), Linux.
-
-### 1.2 Expected folder layout
+### 1.1 Expected folder layout
 
 The two repos must sit **side by side** in the same parent folder — the plugin is
 installed by relative path and several notebooks reach across with `..\..`:
@@ -46,60 +34,14 @@ installed by relative path and several notebooks reach across with `..\..`:
     └── napari_buddy/    (_reader.py, _bud_widget.py, _config_widget.py, …)
 ```
 
-### 1.3 Quick install (recommended)
-
-From the **`buddy` repo root**:
-
-**Windows (Anaconda Prompt):**
-```
-powershell -ExecutionPolicy Bypass -File install.ps1
-```
-
-**macOS / Linux (Terminal):**
-```
-bash install.sh
-```
-
-The script creates a `buddy` conda environment (Python 3.10), installs `buddy`
-with all dependencies (napari + Jupyter included), adds the `bioio-ome-tiff`
-writer plugin, installs `napari-buddy` if it sits next to the repo, and runs an
-import check.
-
-### 1.4 Manual install (if you prefer)
-
-```
-conda create --name buddy python=3.10
-conda activate buddy
-python -m pip install -e ".[test,napari,notebooks]"   # buddy + deps + pytest + napari + jupyter
-python -m pip install bioio-ome-tiff                   # OME-TIFF writer (moved out of bioio core in 3.x)
-python -m pip install -e ../napari-buddy               # the napari plugin (adjust the path)
-```
-
-Use `python -m pip` so installs land in the **active** env, not base conda.
-
-> **Apple Silicon:** if `pip install -e .` fails on the Omnipose step, comment out
-> `omnipose` in `pyproject.toml`, rerun the install, then:
-> ```
-> pip install git+https://github.com/kevinjohncutler/omnipose.git
-> pip install git+https://github.com/kevinjohncutler/cellpose-omni.git
-> ```
-
-### 1.5 Verify the install
-
-```
-conda activate buddy
-python -c "import buddy, bigfish, omnipose, bioio_ome_tiff; print('buddy imports OK')"
-pytest buddy/tests/test_image.py -v      # full pipeline test on bundled example data
-python -m napari                         # launch viewer; check Plugins → napari-buddy
-```
-
-### 1.6 Two things that are slow *once*
+### 1.2 Two things that are slow *once*
 
 - **First `.vsi` read** downloads a Java runtime (`Fetching zulu-jre:11 using
   cjdk…`). Needs internet once; cached afterwards. Offline/behind a proxy?
   Uncomment `openjdk=11` and `maven` in `environment.yml` to get Java from conda
   instead.
 - **First segmentation** downloads the Omnipose/Cellpose model weights.
+
 ---
 
 ## Part 2 — Set up an experiment
@@ -267,7 +209,7 @@ rewriting the per-cell `{channel}.csv` tables (now with mother/bud compartments)
 | `assign_spots` can't find corrected masks | Stage 4's save button (and the DAPI copy in Stage 3) must have run — they create the `corrected/` masks that assignment reads. |
 | "no CUDA GPU is available to PyTorch" | The CPU-only PyTorch is installed. See INSTALL.md → GPU, or ignore (runs on CPU). |
 | "Could not find or download bud_model_….pt" | No internet on first use: download the weights from the GitHub release and put them in `buddy/models/` (INSTALL.md). |
-| Omnipose won't install | Check Python is 3.9/3.10 (not 3.11+). On Apple Silicon see the note in §1.4. |
+| Omnipose won't install | Check Python is 3.9/3.10 (not 3.11+). On Apple Silicon see *Troubleshooting* in [INSTALL.md](INSTALL.md). |
 
 ---
 

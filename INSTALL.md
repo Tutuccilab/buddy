@@ -45,7 +45,7 @@ Which one was used is written to `img.json` (`filter_backend`, `detection_backen
 The two trained bud models (`bud_model_DIC_DAPI_only.pt`, `bud_model_with_ASH1CLB2.pt`, ~100 MB each)
 download automatically to `buddy/models/` the first time automatic bud classification runs.
 Offline? Download them from the GitHub release page of this repository (assets of release
-`bud-models-v1`) and put them in `buddy/models/`, or in any folder you give as
+`bud-models`) and put them in `buddy/models/`, or in any folder you give as
 `"weights_dir"` in the config file.
 
 ## Manual install
@@ -66,13 +66,12 @@ Use `python -m pip` so installs land in the active env, not base conda.
 
 ```
 conda activate buddy
-pytest buddy/tests/test_image.py -v
+pytest -m "not slow"   # fast tests (~1 min); pytest -m slow: Omnipose + bud model
 python -m napari      # Plugins -> buddy   (never bare 'napari')
 python -m notebook    # run the analysis notebooks (from the repo root)
 ```
 
-The pipeline test runs on the bundled example data and should finish with
-no errors.
+The tests download a small test field on first use (release `test-data-v1`) and should finish with no errors.
 
 ## Good to know
 
@@ -102,3 +101,19 @@ no errors.
   pip install git+https://github.com/kevinjohncutler/omnipose.git
   pip install git+https://github.com/kevinjohncutler/cellpose-omni.git
   ```
+
+## Troubleshooting
+
+- **Omnipose on macOS.** If the install fails, install Omnipose from source in a conda env with python<=3.10.11
+  (see [this issue](https://github.com/kevinjohncutler/omnipose/issues/14)): add `jupyterlab` to
+  `omnipose_mac_environment.yml` from the [Omnipose](https://omnipose.readthedocs.io/installation.html) repository, then
+  ```
+  conda env create --name buddy --file omnipose_mac_environment.yml
+  conda activate buddy
+  pip install git+https://github.com/kevinjohncutler/omnipose.git
+  pip install git+https://github.com/kevinjohncutler/cellpose-omni.git
+  ```
+- **Java not found when reading `.vsi` files.** Install `scyjava` (`conda install -c conda-forge scyjava`), set
+  `JAVA_HOME` to the Java of your environment (e.g. `export JAVA_HOME=$CONDA_PREFIX/lib/jvm`), then deactivate and
+  reactivate the environment.
+- **Omnipose GUI** (optional, handy for finding segmentation settings): run `omnipose` from the command line.
