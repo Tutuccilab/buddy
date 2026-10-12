@@ -1,5 +1,6 @@
 """The cell-cycle phase rules (buddy/quantification/cell_cycle.py) on a made-up table, and on the test field."""
 import pandas as pd
+
 from buddy.config import CELL_CYCLE_DEFAULTS
 from buddy.quantification.cell_cycle import NA, NOT_ASSESSED, UNBUDDED, assign_phases, phase_counts
 
