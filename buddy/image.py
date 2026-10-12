@@ -308,6 +308,31 @@ class Image:
                                       **{k: settings[k] for k in ("fold", "nucleus_area", "nucleus_intensity", "max_gap_px")}}
         log.info(f"..{len(flags)} cells flagged for high {ch} (cell_flags.csv)")
 
+    def assign_cell_cycle(self):
+        """Cell-cycle phase per cell (buddy/quantification/cell_cycle.py) -> cell_cycle.csv (napari 'cell cycle' layer)."""
+        from buddy.quantification.cell_cycle import assign_phases, phase_counts
+        settings, f = dict(self.experiment.cell_cycle), self.files
+        channels = [ch for ch in self.fluorescence_channels if f.counts(ch).is_file()]
+        if not settings["enabled"] or not channels:
+            if f.cell_cycle.is_file():
+                f.cell_cycle.unlink()
+            return
+        ash_channel = settings["ash_channel"] or self.experiment.bud_classification["ash_channel"]
+        ash = None
+        if f.counts(ash_channel).is_file():
+            ash = pd.read_csv(f.counts(ash_channel)).set_index("image_cell_id")["total_RNAs"]
+        else:
+            log.info(f"..no {ash_channel} counts: unbudded cells are called 'unbudded', not G1")
+        table = pd.read_csv(f.counts(ash_channel if ash is not None else channels[0]))
+        pixel_um = float(self.experiment.parameters["scale"][1]) / 1000
+        phases = assign_phases(table, settings, pixel_um, ash)
+        phases.to_csv(f.cell_cycle, index=False)
+        counts = phase_counts(phases)
+        self.results["cell_cycle"] = {"ash_channel": ash_channel if ash is not None else None, "counts": counts,
+                                      **{k: settings[k] for k in ("g1_max_ash", "s_g2_bud_um2", "max_bud_um2",
+                                                                  "min_length_um", "max_length_um")}}
+        log.info("..cell-cycle phases (cell_cycle.csv): " + ", ".join(f"{k} {v}" for k, v in counts.items()))
+
     # ---- metadata --------------------------------------------------------------------------------
     def record_settings(self, step):
         """Record in img.json (results -> settings -> step) the config settings this step used (see rerun_check.py)."""

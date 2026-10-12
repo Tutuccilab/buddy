@@ -21,8 +21,9 @@ _warnings.filterwarnings("ignore", message=r".*torch\.load.*weights_only.*", cat
 _warnings.filterwarnings("ignore", category=DeprecationWarning, module=r"aicsimageio(\.|$)")  # old aicsimageio pulled in by Omnipose
 
 
-# napari-buddy versions that work with this buddy (napari-buddy 0.1.0 imports modules that moved in buddy 0.2.0)
-MIN_NAPARI_BUDDY = (0, 1, 1)
+# napari-buddy versions that work with this buddy (napari-buddy 0.1.0 imports modules that moved in buddy 0.2.0;
+# napari-buddy 0.2.0 shows the cell-cycle phases of buddy 0.3.0)
+MIN_NAPARI_BUDDY = (0, 2, 0)
 
 
 def _version_tuple(text):

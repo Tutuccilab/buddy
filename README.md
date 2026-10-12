@@ -18,6 +18,7 @@ yeast cells — from raw microscope files to per-cell mRNA counts.
 - **Quantify** — per-cell and per-compartment (mother vs bud) counts of
   mRNAs, dense regions, nascent RNAs, transcription sites, and nuclei,
   with cell morphology
+- **Cell cycle** — the cell-cycle phase (G1 / S / G2 / M) of every cell (see *Cell-cycle phases* below)
 - **Track** - Processing parameters are recorded per image (JSON) so runs stay reproducible.
 
 What changed per version: [CHANGELOG.md](CHANGELOG.md). Version 0.1.0 adds automatic bud classification and GPU spot detection; the manuscript analysis used 0.0.1.
@@ -102,6 +103,23 @@ check the flagged cells in napari.
 
 All settings, the flags in napari and the output files: [BUD_MODEL.md](BUD_MODEL.md). How the models were trained
 and evaluated: [methods.md](methods.md). Train your own model: `notebooks/05_train_bud_model.ipynb`.
+
+# Cell-cycle phases
+
+After counting (step 3, and again in step 5 with your corrected masks) buddy gives every cell a phase, written to
+`cell_cycle.csv` (with the reason for each call) and shown in napari as the `cell cycle` layer (S, G2 and M written on the cells):
+
+| phase | rule |
+|---|---|
+| G1 | no bud, ≤ 5 ASH1/CLB2 mRNAs |
+| S | bud < 2 µm², no nucleus in the bud |
+| G2 | bud 2–15 µm², no nucleus in the bud |
+| M | bud ≥ 2 µm² with a nucleus in it |
+
+Cells with a mother that does not have exactly one nucleus, or a length outside 2–20 µm, are not assessed; other
+combinations are `NA`. Without an ASH1/CLB2 channel unbudded cells are `unbudded` (G1 cannot be told apart).
+The thresholds are in the optional `"cell_cycle"` block of the config file. The S / G2 split rests on the bud size,
+so check the buds first.
 
 ## Issues
 

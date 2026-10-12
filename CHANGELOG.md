@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0 (2026-10-12)
+- **Cell-cycle phase of every cell** (`buddy/quantification/cell_cycle.py`): after the spots are counted (step 3) and
+  again after your corrections (step 5), every cell gets G1, S, G2 or M from its bud size, the nuclei in mother and bud
+  and its ASH1/CLB2 mRNAs, written to `cell_cycle.csv` (with the reason for each call) and shown in napari-buddy 0.2.0.
+  Same rules as the validated cell-cycle assignment; a 2 µm² bud with a nucleus now counts as M (it fell between S/G2
+  and M). Without an ASH1/CLB2 channel unbudded cells are called "unbudded" instead of G1.
+- New optional config block `"cell_cycle"` (thresholds, ASH1/CLB2 channel; `CELL_CYCLE_DEFAULTS` in `config.py`).
+- Needs napari-buddy ≥ 0.2.0 to show the phases; buddy warns at import when an older napari-buddy is installed.
+
 ## 0.2.0 (2026-10-11)
 - Code reorganised by pipeline step into sub-packages: `reading/` (step 1), `segmentation/` (step 2), `spots/` (step 3),
   `quantification/` (steps 3b/5) and `buds/` (the bud model); `image.py` only ties them together. No change in results

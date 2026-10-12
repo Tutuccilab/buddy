@@ -5,14 +5,14 @@ An Experiment = the images in one input directory that share one config file (pr
     exp.create_image_list()            # the .vsi files / TIFF stacks in inputdir -> exp.images
     exp.read_image_list_from_jsons()   # the processed images in outputdir       -> exp.json_files
 
-Settings are attributes: exp.parameters, exp.channels, exp.bud_classification, exp.cell_flags (dicts with every
+Settings are attributes: exp.parameters, exp.channels, exp.bud_classification, exp.cell_flags, exp.cell_cycle (dicts with every
 default filled in, see buddy/config.py), exp.inputdir / exp.outputdir, exp.if_already_processed.
 """
 import logging
 import re
 from pathlib import Path
 
-from buddy.config import BUD_CLASSIFICATION_DEFAULTS, CELL_FLAG_DEFAULTS, load_config, validate  # noqa: F401 (re-exported)
+from buddy.config import BUD_CLASSIFICATION_DEFAULTS, CELL_CYCLE_DEFAULTS, CELL_FLAG_DEFAULTS, load_config, validate  # noqa: F401 (re-exported)
 from buddy.log import keep_logging, setup_logging
 from buddy.reading.tiff_input import find_dic_file, is_stack
 

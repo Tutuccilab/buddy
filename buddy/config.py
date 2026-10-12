@@ -11,6 +11,7 @@ Blocks of the config file (all settings explained in INSTALLATION_TUTORIAL.md):
     channels                   {name: {filter, mrna, threshold, colormap, tiff_channel?}}
     bud_classification         the bud model (BUD_CLASSIFICATION_DEFAULTS)
     cell_flags                 napari flags for high-ASH1/CLB2 cells (CELL_FLAG_DEFAULTS)
+    cell_cycle                 cell-cycle phase per cell (CELL_CYCLE_DEFAULTS)
     if_already_processed       "ask" | "skip" | "overwrite" (what to do with images processed with other settings)
     experiments                list of {strain, condition} (used by the data-wrangling notebook)
 """
@@ -66,8 +67,19 @@ CELL_FLAG_DEFAULTS = {
     "max_gap_px": 10,             # neighbours: at most this many pixels apart
 }
 
+# cell-cycle phase per cell -> cell_cycle.csv and the napari "cell cycle" layers (see buddy/quantification/cell_cycle.py)
+CELL_CYCLE_DEFAULTS = {
+    "enabled": True,              # false -> no cell_cycle.csv
+    "ash_channel": None,          # None = the "ash_channel" of "bud_classification"; without it no G1 call
+    "g1_max_ash": 5,              # G1: no bud and at most this many ASH1/CLB2 mRNAs
+    "s_g2_bud_um2": 2.0,          # bud area (µm²) that separates S from G2 (and the smallest bud for M)
+    "max_bud_um2": 15.0,          # G2: buds up to this area (µm²)
+    "min_length_um": 2.0,         # cells shorter or longer than this (long axis, µm) are not assessed
+    "max_length_um": 20.0,
+}
+
 POLICIES = ("ask", "skip", "overwrite")
-TOP_LEVEL = {"inputdir", "outputdir", "parameters", "channels", "bud_classification", "cell_flags",
+TOP_LEVEL = {"inputdir", "outputdir", "parameters", "channels", "bud_classification", "cell_flags", "cell_cycle",
              "if_already_processed", "experiments", "cfg_file"}
 
 
@@ -101,6 +113,7 @@ def validate(cfg):
         cfg["channels"][name] = ch
     cfg["bud_classification"] = _fill(cfg.get("bud_classification"), BUD_CLASSIFICATION_DEFAULTS, "bud_classification")
     cfg["cell_flags"] = _fill(cfg.get("cell_flags"), CELL_FLAG_DEFAULTS, "cell_flags")
+    cfg["cell_cycle"] = _fill(cfg.get("cell_cycle"), CELL_CYCLE_DEFAULTS, "cell_cycle")
     policy = cfg.setdefault("if_already_processed", "ask")
     if policy not in POLICIES:
         raise ValueError(f'config: "if_already_processed" must be one of {POLICIES}, not {policy!r}')

@@ -34,6 +34,7 @@ BUD_FLAGS = "bud_flags.csv"                  # cells the bud model was unsure ab
 BUD_PAIRS = "bud_pairs.csv"
 BUD_MODEL_CELLS = "bud_model_cells.csv"
 CELL_FLAGS = "cell_flags.csv"                # unbudded cells with high ASH1/CLB2 (late M / early S)
+CELL_CYCLE = "cell_cycle.csv"                # cell-cycle phase per cell (steps 3 and 5)
 
 
 class ImageFiles:
@@ -111,3 +112,6 @@ class ImageFiles:
 
     @property
     def cell_flags(self): return self.folder / CELL_FLAGS
+
+    @property
+    def cell_cycle(self): return self.folder / CELL_CYCLE

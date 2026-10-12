@@ -5,8 +5,9 @@ panel (napari-buddy), so both always do exactly the same.
     read_image(params, exp)          step 1   read the .vsi + DIC, write {channel}.tif and DIC.tif
     segment_image(json_file, exp)    step 2   Omnipose cell + nucleus masks       (first: exp.init_omnipose())
     spots_image(json_file, exp)      step 3a  focus, background filter, spot detection, decomposition, alignment
-    buds_and_counts(json_file, exp)  step 3b  bud model, count spots per cell, cell flags (first: exp.init_bud_model())
-    reassign_image(json_file, exp)   step 5   count spots again with the corrected masks of step 4
+    buds_and_counts(json_file, exp)  step 3b  bud model, count spots per cell, cell flags, cell-cycle phases
+                                              (first: exp.init_bud_model())
+    reassign_image(json_file, exp)   step 5   count spots and assign phases again with the corrected masks of step 4
 
 Each function records its step times and settings in the image's img.json.
 STEP_TIMES lists which img.json times belong to each step (used for time estimates).
@@ -130,15 +131,17 @@ def buds_and_counts(json_file, exp):
         _timed(my_image, 'bud-classification', my_image.classify_buds)
     _timed(my_image, '05-assign-spots', my_image.assign_spots)     # -> {channel}.csv
     my_image.flag_cells()                                          # -> cell_flags.csv (napari)
+    my_image.assign_cell_cycle()                                   # -> cell_cycle.csv (napari)
     my_image.record_settings('spots')
     my_image.save_metadata('spots')
     return json_file
 
 
 def reassign_image(json_file, exp):
-    """Step 5: count spots again with the (hand-)corrected masks in corrected/."""
+    """Step 5: count spots (and assign cell-cycle phases) again with the (hand-)corrected masks in corrected/."""
     my_image = _load_for_counting(json_file, exp)
     _timed(my_image, '05-assign-spots', my_image.assign_spots)
     my_image.flag_cells()                                          # -> cell_flags.csv (napari)
+    my_image.assign_cell_cycle()                                   # -> cell_cycle.csv (napari)
     my_image.save_metadata('spots')
     return json_file
