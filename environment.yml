@@ -11,10 +11,8 @@ dependencies:
   # then install the code:
   #   pip install -e ".[test,napari]"
   #
-  # Java is NOT listed here on purpose: bioio-bioformats fetches a JRE +
-  # Maven automatically via cjdk on first run (you'll see
-  # "Fetching zulu-jre:11 using cjdk..." the first time you read a .vsi).
-  # If you're offline or behind a strict proxy, uncomment the next two
-  # lines to provide Java from conda instead of letting cjdk download it:
-  # - openjdk=11
-  # - maven
+  # Java + Maven for reading .vsi files (Bio-Formats). From conda-forge, so
+  # nothing is downloaded on the first read (that download fails offline or
+  # behind a proxy). Activating the env sets JAVA_HOME.
+  - openjdk=11
+  - maven

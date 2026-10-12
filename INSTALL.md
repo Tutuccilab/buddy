@@ -85,12 +85,10 @@ The tests download a small test field on first use (release `test-data-v1`) and 
   `python -m notebook`, never bare `napari` / `jupyter`. The bare commands
   can bounce to a broken base-conda copy that happens to be first on your
   PATH (the cause of the numpy/`_ssl` DLL errors).
-- **First `.vsi` read is slow.** Reading Olympus `.vsi` files needs Java.
-  bioio-bioformats fetches a JRE and Maven automatically the first time
-  (`Fetching zulu-jre:11 using cjdk...`). This needs internet once; after
-  that it's cached. On locked-down/offline machines, uncomment
-  `openjdk=11` and `maven` in `environment.yml` and build the env with
-  `conda env create -f environment.yml` instead.
+- **Java for `.vsi` files.** Reading Olympus `.vsi` files needs Java and Maven (Bio-Formats). The installers and
+  `environment.yml` put both in the environment (`openjdk=11`, `maven` from conda-forge, on Windows, macOS and Linux);
+  activating the environment sets `JAVA_HOME`. The first `.vsi` read still takes a moment (Bio-Formats is fetched
+  once with Maven).
 - **Updating the code.** buddy is installed in editable mode (`pip install -e`), so the environment
   uses the code in this folder directly. After pulling or editing code, restart the Jupyter kernel;
   no reinstall needed (only when `pyproject.toml` gets new dependencies).
@@ -113,7 +111,15 @@ The tests download a small test field on first use (release `test-data-v1`) and 
   pip install git+https://github.com/kevinjohncutler/omnipose.git
   pip install git+https://github.com/kevinjohncutler/cellpose-omni.git
   ```
-- **Java not found when reading `.vsi` files.** Install `scyjava` (`conda install -c conda-forge scyjava`), set
-  `JAVA_HOME` to the Java of your environment (e.g. `export JAVA_HOME=$CONDA_PREFIX/lib/jvm`), then deactivate and
-  reactivate the environment.
+- **Java not found when reading `.vsi` files** (e.g. an environment made by hand, or with an older installer):
+  `conda install -c conda-forge openjdk=11 maven`, then deactivate and reactivate the environment. Check with
+  `java -version`. If it is still not found, set `JAVA_HOME` once: `conda env config vars set JAVA_HOME=%CONDA_PREFIX%\Library`
+  (Windows) or `conda env config vars set JAVA_HOME=$CONDA_PREFIX/lib/jvm` (macOS / Linux), and reactivate.
+- **"Bio-Formats does not support this image" for a `.vsi` file that Fiji opens** (underlying error:
+  `java package 'loci' has no attribute 'common'`): Java runs, but the Bio-Formats files that Maven downloads on
+  first use are missing or incomplete (download blocked or interrupted). Check Maven (`mvn -v`), remove the broken
+  download and read a file again with internet access: Windows `rmdir /s /q "%USERPROFILE%\.jgo"`, macOS / Linux
+  `rm -rf ~/.jgo`. Without internet: copy the folders `.jgo` and `.m2/repository/ome` from your home folder on a
+  computer where it works to the same place. To see the real error behind the message:
+  `python -c "from bioio_bioformats import Reader; print(Reader(r'path/to/file.vsi').scenes)"`.
 - **Omnipose GUI** (optional, handy for finding segmentation settings): run `omnipose` from the command line.

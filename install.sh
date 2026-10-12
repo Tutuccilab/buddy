@@ -11,8 +11,10 @@ NAPARI_PATH="${1:-../napari-buddy}"
 ENV_NAME="${2:-buddy}"
 USE_GPU="${3:-auto}"     # auto | cpu
 
-echo "==> Creating conda environment '${ENV_NAME}' (Python 3.10)"
-conda create --name "${ENV_NAME}" python=3.10 -y
+echo "==> Creating conda environment '${ENV_NAME}' (Python 3.10, Java 11 + Maven for reading .vsi files)"
+# Java + Maven come from conda-forge (all platforms), so Bio-Formats does not have to download a Java on first use
+# (which fails without internet or behind a proxy). Activating the env sets JAVA_HOME.
+conda create --name "${ENV_NAME}" python=3.10 conda-forge::openjdk=11 conda-forge::maven -y
 
 echo "==> Installing buddy (editable, with test + napari + notebooks extras)"
 # The 'napari' extra pulls in napari[pyqt6] - the viewer + Qt backend -
@@ -56,6 +58,7 @@ fi
 
 echo "==> Smoke test (imports only)"
 conda run --no-capture-output -n "${ENV_NAME}" python -c "import buddy, bigfish, omnipose, bioio_ome_tiff, segmentation_models_pytorch, torch; print('buddy imports OK | GPU available:', torch.cuda.is_available())"
+conda run --no-capture-output -n "${ENV_NAME}" java -version
 
 echo ""
 echo "Done. Next steps:"

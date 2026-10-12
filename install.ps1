@@ -15,8 +15,10 @@ param(
 )
 $ErrorActionPreference = "Stop"
 
-Write-Host "==> Creating conda environment '$EnvName' (Python 3.10)"
-conda create --name $EnvName python=3.10 -y
+Write-Host "==> Creating conda environment '$EnvName' (Python 3.10, Java 11 + Maven for reading .vsi files)"
+# Java + Maven come from conda-forge, so Bio-Formats does not have to download a Java on first use
+# (which fails without internet or behind a proxy). Activating the env sets JAVA_HOME.
+conda create --name $EnvName python=3.10 conda-forge::openjdk=11 conda-forge::maven -y
 
 Write-Host "==> Installing buddy (editable, with test + napari + notebooks extras)"
 # The 'napari' extra pulls in napari[pyqt6] - the viewer + Qt backend -
@@ -53,6 +55,7 @@ if ($hasGpu -and -not $CPU) {
 
 Write-Host "==> Smoke test (imports only)"
 conda run --no-capture-output -n $EnvName python -c "import buddy, bigfish, omnipose, bioio_ome_tiff, segmentation_models_pytorch, torch; print('buddy imports OK | GPU available:', torch.cuda.is_available())"
+conda run --no-capture-output -n $EnvName java -version
 
 Write-Host ""
 Write-Host "Done. Next steps:"

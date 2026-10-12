@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+- Install: Java 11 and Maven (conda-forge `openjdk`, `maven`) are now part of the environment (installers and
+  `environment.yml`), so reading `.vsi` files no longer depends on Bio-Formats downloading a Java on first use
+  (which failed offline or behind a proxy). The installers also print `java -version` at the end.
+- INSTALL.md: troubleshooting for "Bio-Formats does not support this image" (incomplete Bio-Formats download).
+
 ## 0.3.0 (2026-10-12)
 - **Cell-cycle phase of every cell** (`buddy/quantification/cell_cycle.py`): after the spots are counted (step 3) and
   again after your corrections (step 5), every cell gets G1, S, G2 or M from its bud size, the nuclei in mother and bud
