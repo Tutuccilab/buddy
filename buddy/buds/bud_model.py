@@ -42,7 +42,7 @@ import numpy as np
 import pandas as pd
 from scipy import ndimage as ndi
 
-from buddy.buds.bud_tools import BACKGROUND, BUD, MOTHER    # bud-mask values used everywhere in buddy
+from buddy.buds.bud_tools import BACKGROUND, BUD, MOTHER  # bud-mask values used everywhere in buddy
 from buddy.buds.dic_orientation import dic_light_direction, rotation_to_reference
 
 # ---------------------------------------------------------------------------------------------
