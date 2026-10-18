@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 (2026-10-18)
 - DIC turn (still measured per image): buddy now warns when the DIC lighting direction of an image cannot be measured
   clearly (consistency < 0.9, e.g. blurry DIC) and writes the measurement to `img.json`; `bud_training.prepare_image`
   warns the same way. Optional config setting `"bud_classification"` -> `"dic_rotation"` (null = measured per image,
