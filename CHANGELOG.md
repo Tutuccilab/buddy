@@ -1,6 +1,33 @@
 # Changelog
 
 ## Unreleased
+- DIC turn (still measured per image): buddy now warns when the DIC lighting direction of an image cannot be measured
+  clearly (consistency < 0.9, e.g. blurry DIC) and writes the measurement to `img.json`; `bud_training.prepare_image`
+  warns the same way. Optional config setting `"bud_classification"` -> `"dic_rotation"` (null = measured per image,
+  default; 0-3 = fixed turn for every image of the experiment).
+- `bud_training.training_rows` leaves out the she2/she3 strains (YET563, YET572) for `with_ASH1CLB2` by default
+  (`EXCLUDED_STRAINS`; before, only notebook 05 passed them), and matches strain names as whole names.
+- Training files from `bud_training.prepare_image` now include the imaging day in their name (`<day>__<strain>__<image>`):
+  image names repeat between days, and the second one used to be skipped silently. Prepare the images again.
+- **Shipped bud models replaced by the models reported in the paper** (`bud_model_DIC_DAPI_only_v2.pt`,
+  `bud_model_with_ASH1CLB2_v2.pt`, release `bud-models`): same recipe, trained without imaging day 240909, last epoch (30)
+  and claim cut-off 0.5 for both models, fixed in advance (was: epoch 22 / cut-off 0.6 and epoch 16 / cut-off 0.5, chosen
+  on the gold set). On the held-out day: pair F1 0.75 (DIC + DAPI) and 0.80 (with ASH1/CLB2); details in
+  `buddy/models/*.json`. Bud pairs can change slightly compared with the previous models; the new file names make buddy
+  download the new weights even where the old ones are already present. The old weights stay in the release.
+- Notebook 05 (train your own bud model): holds out whole imaging days (`TEST_DAYS`) instead of folder names, uses the
+  last epoch and cut-off 0.5 like the shipped models, and no longer suggests picking an earlier epoch on the test images.
+- Test data: reference outputs of the slow bud-model test renewed with the new model (`tests/data/field_A`, release
+  `test-data-v2`).
+- Bud model, mother-bud assignment (`BudModel.assign`) simplified: claims are accepted from strongest to weakest and a
+  claim is skipped when its cell is already a bud, its bud is already taken, or its bud is an accepted mother. The
+  old rule that let a weaker claim take a bud by scoring higher on that bud's pixels (and knock out the earlier mother)
+  is gone; it never occurred on the 16 held-out test fields, which give identical pairs before and after. A close call
+  is now: another cell claimed the same bud with a strength within 0.15 of the winner.
+- Spot decomposition (step 3) is now repeatable: Big-FISH builds the reference spot from up to 2000 randomly chosen
+  spots, so channels with more spots could give slightly different decomposed spots on every run. The random generator
+  is now seeded for this step (`DECOMPOSITION_SEED = 0` in `buddy/spots/detection.py`) and restored afterwards.
+  Channels with more than 2000 spots can differ slightly from results made before this change; rerun step 3 to update.
 - Install: Java 11 and Maven (conda-forge `openjdk`, `maven`) are now part of the environment (installers and
   `environment.yml`), so reading `.vsi` files no longer depends on Bio-Formats downloading a Java on first use
   (which failed offline or behind a proxy). The installers also print `java -version` at the end.

@@ -117,7 +117,7 @@ After counting (step 3, and again in step 5 with your corrected masks) buddy giv
 | M | bud ≥ 2 µm² with a nucleus in it |
 
 Cells with a mother that does not have exactly one nucleus, or a length outside 2–20 µm, are not assessed; other
-combinations are `NA`. Without an ASH1/CLB2 channel unbudded cells are `unbudded` (G1 cannot be told apart).
+combinations are `NA`. Without an ASH1/CLB2 channel unbudded cells are `unbudded`.
 The thresholds are in the optional `"cell_cycle"` block of the config file. The S / G2 split rests on the bud size,
 so check the buds first.
 

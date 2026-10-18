@@ -19,7 +19,7 @@ import pytest
 TESTS_DIR = Path(__file__).resolve().parent
 DATA_DIR = TESTS_DIR / "data"
 FIELD = DATA_DIR / "field_A"
-TEST_DATA_URL = "https://github.com/Tutuccilab/buddy/releases/download/test-data-v1/field_A.zip"
+TEST_DATA_URL = "https://github.com/Tutuccilab/buddy/releases/download/test-data-v2/field_A.zip"
 
 
 def pytest_configure(config):

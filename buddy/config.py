@@ -55,6 +55,8 @@ BUD_CLASSIFICATION_DEFAULTS = {
     "overwrite_manual_corrections": False,  # never replace bud masks you corrected by hand, unless true
     "weights_dir": None,                    # folder with the model weights; None = buddy/models (auto-download)
     "snap": True,                           # a claimed bud lying mostly inside one Omnipose object takes that whole object
+    "dic_rotation": None,                   # None = measured per image; 0-3 = turn every image by this many x 90 degrees
+                                            # (use when the DIC lighting cannot be measured reliably, e.g. a blurry imaging day)
 }
 
 # napari flags for unbudded cells with high ASH1/CLB2 (late M / early S, see buddy/cell_flags.py)
@@ -112,6 +114,9 @@ def validate(cfg):
             ch["mrna"] = name
         cfg["channels"][name] = ch
     cfg["bud_classification"] = _fill(cfg.get("bud_classification"), BUD_CLASSIFICATION_DEFAULTS, "bud_classification")
+    turn = cfg["bud_classification"]["dic_rotation"]
+    if turn is not None and turn not in (0, 1, 2, 3):
+        raise ValueError(f'config "bud_classification": "dic_rotation" must be null or 0, 1, 2 or 3 (x 90 degrees), not {turn!r}')
     cfg["cell_flags"] = _fill(cfg.get("cell_flags"), CELL_FLAG_DEFAULTS, "cell_flags")
     cfg["cell_cycle"] = _fill(cfg.get("cell_cycle"), CELL_CYCLE_DEFAULTS, "cell_cycle")
     policy = cfg.setdefault("if_already_processed", "ask")

@@ -13,8 +13,8 @@ How it works, for one image
    'with_ASH1CLB2' model.
 2. Each cell with a bud map makes a "claim" on a bud. Claim strength = P(budded) x mean bud-map value.
    Claims below the model's cut-off are dropped.
-3. Two cells can claim the same bud. Then their claims are compared on the SAME pixels and the
-   stronger one wins. A close call (difference < 0.15) is flagged for you to check.
+3. Claims are accepted from strongest to weakest, so if two cells claim the same bud, the stronger claim
+   keeps it. A close call (the other claim's strength within 0.15) is flagged for you to check.
 4. "Snap": a claimed bud that lies mostly inside one Omnipose object (not the mother) becomes that whole
    object - the model says which bud belongs to which mother, Omnipose gives the full outline. Helps for
    large buds, which Omnipose usually segments as a cell of their own. ("bud_classification" -> "snap")
@@ -42,6 +42,7 @@ import numpy as np
 import pandas as pd
 from scipy import ndimage as ndi
 
+from buddy.buds.bud_tools import BACKGROUND, BUD, MOTHER    # bud-mask values used everywhere in buddy
 from buddy.buds.dic_orientation import dic_light_direction, rotation_to_reference
 
 # ---------------------------------------------------------------------------------------------
@@ -49,9 +50,9 @@ from buddy.buds.dic_orientation import dic_light_direction, rotation_to_referenc
 log = logging.getLogger("buddy")
 # settings
 # ---------------------------------------------------------------------------------------------
-MODELS = {   # cut_off: chosen on the gold set (see models/<file>.json)
-    "DIC_DAPI_only": {"file": "bud_model_DIC_DAPI_only.pt", "uses_ash": False, "cut_off": 0.6, "crop_px": 192},
-    "with_ASH1CLB2": {"file": "bud_model_with_ASH1CLB2.pt", "uses_ash": True, "cut_off": 0.5, "crop_px": 192},
+MODELS = {   # last epoch (30) and cut-off 0.5, fixed in advance; tested on an imaging day left out of training (see models/<file>.json)
+    "DIC_DAPI_only": {"file": "bud_model_DIC_DAPI_only_v2.pt", "uses_ash": False, "cut_off": 0.5, "crop_px": 192},
+    "with_ASH1CLB2": {"file": "bud_model_with_ASH1CLB2_v2.pt", "uses_ash": True, "cut_off": 0.5, "crop_px": 192},
 }
 # where the weights are downloaded from the first time a model is used
 WEIGHTS_URL = "https://github.com/Tutuccilab/buddy/releases/download/bud-models/{file}"
@@ -63,9 +64,9 @@ CLASSES = ["unbudded", "budded", "bud"]
 SNAP_FRAC = 0.6            # snap: a claim lying >= this fraction inside one Omnipose object takes the whole object
 MIN_BUD_PX = 15            # smaller bud maps are ignored
 CLOSE_CALL = 0.15          # two claims closer than this -> flagged
-UNCLAIMED_BUD_P = 0.9      # a cell this sure to be a bud, but not given to any mother -> flagged
+UNCLAIMED_BUD_P = 0.8      # a cell this sure to be a bud, but not given to any mother -> flagged
 BORDERLINE = 0.1           # claims within this distance of the cut-off -> flagged
-BUD, BACKGROUND, MOTHER = 1, 2, 3     # bud-mask values used everywhere in buddy
+LIGHT_MIN_CONSISTENCY = 0.9   # DIC lighting measured less consistently than this -> warning (set "dic_rotation" in the config)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -170,7 +171,7 @@ def weights_path(model_name, weights_dir=None):
 # ---------------------------------------------------------------------------------------------
 class BudModel:
 
-    def __init__(self, network, model_name, device, cut_off=None, snap=True, crop=None):
+    def __init__(self, network, model_name, device, cut_off=None, snap=True, crop=None, dic_rotation=None):
         self.network = network
         self.name = model_name
         self.uses_ash = MODELS[model_name]["uses_ash"]
@@ -178,20 +179,25 @@ class BudModel:
         self.crop = MODELS[model_name]["crop_px"] if crop is None else int(crop)
         self.snap = snap
         self.device = device
+        self.dic_rotation = dic_rotation     # None = measure per image; 0-3 = fixed number of 90-degree turns
 
     @classmethod
-    def load(cls, model_name="DIC_DAPI_only", use_gpu=True, weights_dir=None, cut_off=None, snap=True, weights_file=None):
+    def load(cls, model_name="DIC_DAPI_only", use_gpu=True, weights_dir=None, cut_off=None, snap=True, weights_file=None,
+             dic_rotation=None):
         """weights_file: your own trained weights (05_train_bud_model.ipynb) instead of the released ones."""
         import torch
         if model_name not in MODELS:
             raise ValueError(f"unknown bud model '{model_name}', choose one of {list(MODELS)}")
         device = pick_device(use_gpu)
         network = build_network(n_input_channels(model_name))
-        state = torch.load(weights_file or weights_path(model_name, weights_dir), map_location=device, weights_only=True)
+        # the weights are unpickled on the CPU: unpickling straight onto the GPU asks CUDA for the current device
+        # from the loading thread, which stalled now and then in napari (step 3 after step 2); .to(device) below
+        # moves the network to the GPU afterwards
+        state = torch.load(weights_file or weights_path(model_name, weights_dir), map_location="cpu", weights_only=True)
         network.load_state_dict(state)
         network.to(device).eval()
         log.info(f"bud model '{model_name}' loaded on {device}")
-        return cls(network, model_name, device, cut_off, snap)
+        return cls(network, model_name, device, cut_off, snap, dic_rotation=dic_rotation)
 
     # ---- step 1: predict, cell by cell ---------------------------------------------------------
     def predict_cells(self, dic, dapi, cell_masks, ash=None):
@@ -220,9 +226,17 @@ class BudModel:
         image = np.stack([dic_n, dapi_n] + ([ash_n] if self.uses_ash else [])).astype(np.float32)
 
         # turn every crop so the DIC lighting comes from the direction the model was trained on
-        angle, _, _ = dic_light_direction(image[0], cell_masks)
-        k = rotation_to_reference(angle)
+        angle, consistency, n_cells = dic_light_direction(image[0], cell_masks)
+        if self.dic_rotation is not None:
+            k = int(self.dic_rotation) % 4
+        else:
+            k = rotation_to_reference(angle)
+            if not consistency >= LIGHT_MIN_CONSISTENCY:          # also catches NaN (no cell large enough)
+                log.warning(f"..DIC lighting direction unclear (angle {angle:.0f} deg, consistency {consistency:.2f}, "
+                            f"{n_cells} cells): turned by {k} x 90 deg - check the bud result, or fix the turn for this "
+                            'experiment with "bud_classification" -> "dic_rotation" (0-3) in the config file')
         self.last_rotation = k
+        self.last_light = dict(angle=float(angle), consistency=float(consistency), n_cells=int(n_cells))
 
         # the model also sees each crop mirrored along the anti-diagonal (keeps the DIC lighting); both are averaged
         anti_transpose = lambda t: torch.rot90(t.transpose(-1, -2), 2, (-2, -1))
@@ -285,70 +299,38 @@ class BudModel:
     # ---- step 3: who gets which bud ----------------------------------------------------------
     def assign(self, cells, cell_masks):
         """
-        Strongest claim first. A claim is accepted unless
-          * the claiming cell itself lies inside a bud that was already accepted (it is a bud, not a mother),
-          * it overlaps an accepted bud and loses the comparison on that bud's pixels,
-          * it would swallow a cell that already is an accepted mother, and is weaker than that mother.
-        Returns {mother label: cell dict with 'claim', 'margin'}.
+        Accept claims from strongest to weakest; every cell gets at most one role. A claim is skipped when
+          * its own cell is already an accepted bud (a bud cannot be a mother),
+          * more than half of its bud is already an accepted bud (a stronger claim got there first; the winner's
+            'margin' records how close it was, see find_flags),
+          * its bud covers more than half of an accepted mother (a mother cannot become a bud).
+        Returns {mother label: cell dict with 'claim' (and 'margin' when another cell claimed the same bud)}.
         """
         cell_masks = np.asarray(cell_masks)
         W = cell_masks.shape[1]
         pixels_of = {}                                                       # label -> flat pixel indices
         for label, b in enumerate(ndi.find_objects(cell_masks), start=1):
-            if b is None:
-                continue
-            yy, xx = np.nonzero(cell_masks[b] == label)
-            pixels_of[label] = np.sort((yy + b[0].start) * W + (xx + b[1].start))
+            if b is not None:
+                yy, xx = np.nonzero(cell_masks[b] == label)
+                pixels_of[label] = np.sort((yy + b[0].start) * W + (xx + b[1].start))
         for c in cells:
             self.make_claim(c, W)
-        candidates = sorted([c for c in cells if len(c["claim"]) and c["strength"] >= self.cut_off], key=lambda c: -c["strength"])
+        candidates = sorted((c for c in cells if c["strength"] >= self.cut_off), key=lambda c: -c["strength"])
 
-        owner = {}          # pixel -> mother label (pixels of accepted buds)
+        owner = np.zeros(cell_masks.size, np.int64)                           # pixel -> mother label (0 = free)
         accepted = {}
         for c in candidates:
-            own = pixels_of.get(c["label"], np.array([], np.int64))
-            sample = own[:: max(1, len(own) // 200)]
-            if len(sample) and sum(int(p) in owner for p in sample) > 0.5 * len(sample):
-                continue                                                    # this cell is itself a bud
-            overlap = {}
-            for p in c["claim"]:
-                o = owner.get(int(p))
-                if o is not None:
-                    overlap[o] = overlap.get(o, 0) + 1
-            beaten, ok, closest = [], True, np.inf
-            for other, n in overlap.items():
-                d = accepted[other]
-                if n > 0.5 * min(len(c["claim"]), len(d["claim"])):         # same bud: compare on its pixels
-                    mine, theirs = c["p_budded"] * mean_on(c, d["claim"]), d["strength"]
-                    closest = min(closest, abs(mine - theirs))
-                    if mine > theirs:
-                        beaten.append(other)
-                    else:
-                        ok = False
-            for other, d in list(accepted.items()):
-                if other in beaten:
-                    continue
-                theirs = pixels_of.get(other, np.array([], np.int64))
-                if len(theirs) and np.isin(theirs, c["claim"]).mean() > 0.5:  # would swallow an accepted mother
-                    closest = min(closest, abs(c["strength"] - d["strength"]))
-                    if c["strength"] > d["strength"]:
-                        beaten.append(other)
-                    else:
-                        ok = False
-            if not ok:
-                for other in overlap:
-                    if other in accepted:
-                        accepted[other]["margin"] = min(accepted[other].get("margin", np.inf), closest)
+            if (owner[pixels_of[c["label"]]] > 0).mean() > 0.5:
+                continue                                                     # this cell is itself a bud
+            taken = owner[c["claim"]]
+            if (taken > 0).mean() > 0.5:                                     # its bud is already taken
+                winner = accepted[int(np.bincount(taken[taken > 0]).argmax())]
+                winner["margin"] = min(winner.get("margin", np.inf), winner["strength"] - c["strength"])
                 continue
-            for other in beaten:
-                for p in accepted[other]["claim"]:
-                    if owner.get(int(p)) == other:
-                        del owner[int(p)]
-                del accepted[other]
-            c["margin"] = closest
+            if any(np.isin(pixels_of[m], c["claim"]).mean() > 0.5 for m in accepted):
+                continue                                                     # its bud is an accepted mother
             accepted[c["label"]] = c
-            for p in c["claim"]:
-                owner[int(p)] = c["label"]
+            owner[c["claim"]] = c["label"]
         self._pixels_of = pixels_of
         return accepted
 
@@ -448,7 +430,7 @@ class BudModel:
         table = pd.DataFrame([{k: v for k, v in c.items() if k in ("label", "p_unbudded", "p_budded", "p_bud", "strength")}
                               for c in cells])
         return dict(cell_masks=merged, bud_masks=bud_masks, pairs=pairs, cells=table, flags=flags,
-                    dic_rotation=self.last_rotation)
+                    dic_rotation=self.last_rotation, dic_light=getattr(self, "last_light", None))
 
 
 def mean_on(cell, region):

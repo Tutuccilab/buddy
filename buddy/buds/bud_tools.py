@@ -13,8 +13,9 @@ from scipy.ndimage import binary_dilation
 from skimage.measure import label as cc_label
 from skimage.measure import regionprops
 
-# 3-class bud-mask labels
-BG, BUD, MOTHER = 2, 1, 3
+# 3-class bud-mask values, the one definition used everywhere in buddy (bud model, spot assignment, napari-buddy)
+BUD, BACKGROUND, MOTHER = 1, 2, 3
+BG = BACKGROUND             # old name, kept for existing notebooks
 
 
 def _bbox_rectangle(bbox):
@@ -68,7 +69,7 @@ def build_bud_seed(cell_masks, bud_labels, keep_bud_mask=None):
     after their DIC cell has been merged into a mother. Returns a uint8 array.
     """
     cell_masks = np.asarray(cell_masks)
-    seed = np.full(cell_masks.shape, BG, dtype=np.uint8)
+    seed = np.full(cell_masks.shape, BACKGROUND, dtype=np.uint8)
     seed[cell_masks > 0] = MOTHER
     if bud_labels:
         seed[np.isin(cell_masks, list(bud_labels))] = BUD
@@ -82,48 +83,72 @@ def candidate_rectangles(props, labels):
     return [_bbox_rectangle(p.bbox) for p in props if p.label in labels]
 
 
+def cells_inside(dic_masks, region):
+    """
+    Labels of the segmented cells that lie mostly (> 50 %) inside `region`, most overlapping first.
+    Same rule as the bud model (bud_model.build_masks): such a cell is part of the bud.
+    """
+    dic_masks = np.asarray(dic_masks)
+    labels, inside = np.unique(dic_masks[region], return_counts=True)
+    keep = labels > 0
+    labels, inside = labels[keep], inside[keep]
+    if not labels.size:
+        return []
+    area = np.bincount(dic_masks.ravel(), minlength=int(labels.max()) + 1)[labels]
+    mostly = inside / area > 0.5
+    order = np.argsort(-inside[mostly], kind="stable")
+    return [int(v) for v in labels[mostly][order]]
+
+
 def assign_buds_to_mothers(dic_masks, bud_masks, bud_value=BUD, border=1):
     """
     Assign each connected bud (bud_masks == bud_value) to its mother cell.
 
-    The annotated DIC cell (the dominant label under the bud annotation) is taken
-    to be the bud. Its mother is the cell that the *whole bud cell* touches most.
-    A bud is only linked to a mother that is at least as large as the bud, so a
-    normal cell is never merged into a smaller neighbour.
+    Same rules as the bud model (bud_model.py) where the two overlap:
+    - bud pixels are joined only through shared edges (4-connectivity), like the model's claims;
+    - a segmented cell that lies mostly (> 50 %) inside the bud is part of the bud.
+
+    Buds made by the bud model are already merged into their mother (the bud carries the mother's
+    label) and keep the model's mother. For buds painted by hand (or when the model was not used),
+    the mother is the cell that the bud - its cells, else the painted pixels - touches most along a
+    1-px ring. A bud made of segmented cells is only linked to a mother that is at least as large,
+    so a normal cell is never merged into a smaller neighbour.
 
     Returns
     -------
     bud_labeled : label image; each bud's pixels carry its assigned mother label.
-    assignments : dict {bud_component_index: (mother_label, own_label) or (None, own_label)}
+    assignments : dict {bud_component_index: (mother_label, own_label) or (None, own_label)};
+                  own_label is the cell that is (mostly) the bud, None if no cell lies mostly inside it.
     unassigned  : list of bud_component_index with no suitable mother
     bud_cc      : connected-component labelling of the buds.
     """
     dic_masks = np.asarray(dic_masks)
-    # connected bud pixels per DIC cell, so two touching buds of different cells stay separate buds
     is_bud = np.asarray(bud_masks) == bud_value
-    bud_cc = cc_label(np.where(is_bud, dic_masks.astype(np.int64) + 1, 0), background=0, connectivity=2)
+    # connected bud pixels per DIC cell, so two touching buds of different cells stay separate buds
+    bud_cc = cc_label(np.where(is_bud, dic_masks.astype(np.int64) + 1, 0), background=0, connectivity=1)
     bud_labeled = np.zeros_like(dic_masks)
     assignments, unassigned = {}, []
 
     for comp in range(1, int(bud_cc.max()) + 1):
         comp_mask = bud_cc == comp
 
-        own = dic_masks[comp_mask]
-        own = own[own > 0]
-        own_label = int(np.bincount(own).argmax()) if own.size else None
-
         # already linked: the bud carries the label of a cell that also has non-bud (mother) pixels
         # (e.g. after automatic bud classification, which merges each bud into its mother)
-        if own_label is not None and ((dic_masks == own_label) & (np.asarray(bud_masks) != bud_value)).sum() > comp_mask.sum() // 2:
-            assignments[comp] = (own_label, own_label)
-            bud_labeled[comp_mask] = own_label
+        under = dic_masks[comp_mask]
+        under = under[under > 0]
+        dominant = int(np.bincount(under).argmax()) if under.size else None
+        if dominant is not None and ((dic_masks == dominant) & ~is_bud).sum() > comp_mask.sum() // 2:
+            assignments[comp] = (dominant, dominant)
+            bud_labeled[comp_mask] = dominant
             continue
 
-        # region whose neighbours we search: the whole bud cell, else the annotation
-        region = (dic_masks == own_label) if own_label is not None else comp_mask
+        # the bud: the cells lying mostly inside it, else the painted pixels themselves
+        own = cells_inside(dic_masks, comp_mask)
+        own_label = own[0] if own else None
+        region = np.isin(dic_masks, own) if own else comp_mask
         ring = binary_dilation(region, iterations=border) & ~region
         neigh = dic_masks[ring]
-        neigh = neigh[(neigh > 0) & (neigh != own_label)]
+        neigh = neigh[(neigh > 0) & ~np.isin(neigh, own)]
         if neigh.size == 0:
             assignments[comp] = (None, own_label)
             unassigned.append(comp)
@@ -133,7 +158,7 @@ def assign_buds_to_mothers(dic_masks, bud_masks, bud_value=BUD, border=1):
 
         # a bud must be no larger than its mother (guards against merging a real
         # cell into a smaller neighbour)
-        if own_label is not None and (dic_masks == own_label).sum() > (dic_masks == mother).sum():
+        if own and region.sum() > (dic_masks == mother).sum():
             assignments[comp] = (None, own_label)
             unassigned.append(comp)
             continue
@@ -146,19 +171,21 @@ def assign_buds_to_mothers(dic_masks, bud_masks, bud_value=BUD, border=1):
 
 def merge_buds_into_mothers(dic_masks, assignments, bud_cc, bud_value=BUD):
     """
-    Relabel each linked bud's DIC cell to its mother's label, so a mother and its
-    bud share one label in the returned DIC mask. Unassigned buds are untouched.
-    Returns a copy of dic_masks with the merges applied.
+    Relabel the cells of each linked bud (those lying mostly inside it, as in the bud model) to its
+    mother's label, so a mother and its bud share one label in the returned DIC mask. Painted bud
+    pixels on background join the mother too; pixels on other cells are left alone. Unassigned buds
+    are untouched. Returns a copy of dic_masks with the merges applied.
     """
-    dic = np.asarray(dic_masks).copy()
+    original = np.asarray(dic_masks)
+    dic = original.copy()
     for comp, (mother, own_label) in assignments.items():
         if mother is None:
             continue
-        if own_label is not None and own_label != mother:
-            dic[dic == own_label] = mother          # merge whole bud cell
-        # add only background pixels of the annotation (never clobber other cells)
         comp_mask = bud_cc == comp
-        dic[comp_mask & (dic == 0)] = mother
+        for label in cells_inside(original, comp_mask):
+            if label != mother:
+                dic[original == label] = mother          # merge the whole bud cell
+        dic[comp_mask & (original == 0)] = mother        # add only background pixels of the annotation
     return dic
 
 

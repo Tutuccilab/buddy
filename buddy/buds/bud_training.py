@@ -21,6 +21,7 @@ Three steps:
 """
 import json
 import logging
+import re
 import time
 from pathlib import Path
 
@@ -42,6 +43,7 @@ from buddy.buds.bud_model import (
     pad_to,
     pick_device,
 )
+from buddy.buds.bud_tools import BUD
 from buddy.buds.dic_orientation import TRANSFORMS, dic_light_direction, lighting_preserving_transforms, rotation_to_reference
 
 DEFAULT_PIXEL_NM = 65.0   # pixel size when an image's img.json does not record it ("parameters" -> "scale")
@@ -56,6 +58,8 @@ SMALL_BUD_PX = 700        # buds smaller than this get more weight in the loss (
 DOT_JITTER = 2            # px, training only: the dot is not always exactly on the centre
 CELL_LOSS_WEIGHT = 0.5    # weight of the cell-map loss
 DRAW_SHARE = {"budded": 0.40, "not mine": 0.25, "bud": 0.15, "unbudded": 0.20}
+# strains left out per model by default: she2/she3 deletions, in which ASH1 mRNA is not transported to the bud
+EXCLUDED_STRAINS = {"DIC_DAPI_only": (), "with_ASH1CLB2": ("YET563", "YET572")}
 
 
 # ---------------------------------------------------------------------------------------------
@@ -207,11 +211,12 @@ def prepare_image(folder, out_dir, ash_channel="ASH1CLB2"):
     Everything is put in the frame of the corrected masks (= fluorescence frame).
     """
     folder, out_dir = Path(folder), Path(out_dir)
-    name = f"{folder.parent.parent.name}__{folder.name}".replace(" ", "")
+    day = folder.parents[2].name if len(folder.parents) > 2 else ""      # <day>/<strain replicate>/output/<image>
+    name = f"{day}__{folder.parent.parent.name}__{folder.name}".replace(" ", "")   # the day too: names repeat between days
     if (out_dir / f"{name}.npz").exists():
         return name
     cells = io.imread(folder / "corrected" / "DIC_corrected_masks.tif").astype(np.int64)
-    bud = io.imread(folder / "corrected" / "bud_corrected_masks.tif") == 1
+    bud = io.imread(folder / "corrected" / "bud_corrected_masks.tif") == BUD
     shape = cells.shape
     omni = io.imread(folder / "DIC_masks_pp.tif")
     if not (omni > 0).any():
@@ -232,7 +237,11 @@ def prepare_image(folder, out_dir, ash_channel="ASH1CLB2"):
     x[:, ~valid] = 0
     ash_file = folder / f"{ash_channel}.tif"
     ash = pad_to(normalise_ash(io.imread(ash_file).max(0)), shape) if ash_file.exists() else np.zeros(shape, np.float32)
-    rotation = rotation_to_reference(dic_light_direction(x[0], omni)[0])
+    light_angle, light_consistency, n_cells = dic_light_direction(x[0], omni)
+    rotation = rotation_to_reference(light_angle)              # measured per image, as for the shipped models
+    if not light_consistency >= 0.9:
+        log.warning(f"{name}: DIC lighting direction unclear (angle {light_angle:.0f} deg, consistency "
+                    f"{light_consistency:.2f}, {n_cells} cells) - turned by {rotation} x 90 deg; check this image")
 
     px_um2 = pixel_area_um2(meta)
     table = label_cells(omni, cells, bud, late_m_cells(folder, ash_channel), px_um2)
@@ -240,7 +249,8 @@ def prepare_image(folder, out_dir, ash_channel="ASH1CLB2"):
     out_dir.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(out_dir / f"{name}.npz", x=x.astype(np.float16), ash=ash.astype(np.float16), omni=omni.astype(np.uint16),
                         uncertain=uncertain_objects(raw, cells, px_um2), bud_cells=np.where(bud, cells, 0).astype(np.uint16),
-                        cells=cells.astype(np.uint16), rotation=rotation)
+                        cells=cells.astype(np.uint16), rotation=rotation,
+                        light_angle=light_angle, light_consistency=light_consistency)
     table.to_csv(out_dir / f"{name}.csv", index=False)
     return name
 
@@ -315,16 +325,22 @@ class CellCrops:
                 torch.tensor(weight, dtype=torch.float32))
 
 
-def training_rows(table, model_name, exclude_strains=(), exclude_late_m=False):
+def training_rows(table, model_name, exclude_strains=None, exclude_late_m=False):
     """
-    Which cells to learn from: unbudded / budded / bud cells away from the image edge. with_ASH1CLB2 leaves out the
-    given strains (she2/she3). Late-M cells are kept unless exclude_late_m (keeping them scored better).
+    Which cells to learn from: unbudded / budded / bud cells away from the image edge.
+    exclude_strains: strain names whose images are left out; None = the model's default (EXCLUDED_STRAINS: she2/she3
+    for with_ASH1CLB2, none for DIC_DAPI_only). A strain matches as a whole name in the image name, any case
+    (YET563 matches "240909__YET563BR3__..." and "yET563-...", but not YET5630).
+    Late-M cells are kept unless exclude_late_m (keeping them scored better).
     """
+    if exclude_strains is None:
+        exclude_strains = EXCLUDED_STRAINS[model_name]
     t = table[table.kind.isin(CLASSES) & ~table.edge.astype(bool)]
     if exclude_late_m:
         t = t[~t.late_m.astype(bool)]
     for strain in exclude_strains:
-        t = t[~t.image.str.upper().str.contains(strain.upper())]
+        whole_name = rf"(?<![A-Z0-9]){re.escape(strain.upper())}(?![0-9])"
+        t = t[~t.image.str.upper().str.contains(whole_name, regex=True)]
     return t
 
 
@@ -359,8 +375,8 @@ def loss_function(maps, cell_class, bud, cell, ignore, kind, weight):
 def train(table, data_dir, model_name, out_file, epochs=30, samples_per_epoch=3000, batch_size=16, lr=3e-4, use_gpu=True,
           save_every=2, pretrained_encoder=True, crop=None):
     """
-    Train one model; the weights of the last epoch are saved to out_file (+ every `save_every` epochs, so you can
-    pick an earlier epoch: the last one is not always the best). pretrained_encoder: start from ImageNet weights
+    Train one model; the weights of the last epoch are saved to out_file (+ every `save_every` epochs, for
+    comparison; the shipped models use the last epoch, 30). pretrained_encoder: start from ImageNet weights
     (downloaded once by segmentation-models-pytorch). crop: crop size in px (default: the model's, 192).
     """
     import torch

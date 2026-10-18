@@ -75,7 +75,8 @@ class Experiment:
             return
         from buddy.buds.bud_model import BudModel  # torch import deferred to here
         self.bud_model = BudModel.load(settings["model"], use_gpu=gpu_available(self.use_gpu),
-                                       weights_dir=settings["weights_dir"], snap=settings["snap"])
+                                       weights_dir=settings["weights_dir"], snap=settings["snap"],
+                                       dic_rotation=settings.get("dic_rotation"))
 
     # ---- the images --------------------------------------------------------------------------------
     @staticmethod

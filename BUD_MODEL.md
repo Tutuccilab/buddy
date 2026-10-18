@@ -30,6 +30,11 @@ spot counting per mother and bud works as before.
 * `"snap"` (default true): a bud the model found that lies mostly inside one Omnipose object becomes that whole object
   (the model says which bud belongs to which mother, Omnipose gives the full outline; helps for large buds).
 * `"weights_dir"` (optional): folder with your own trained weights (default: `buddy/models`, downloaded automatically).
+* `"dic_rotation"` (default null): the DIC images are turned by a multiple of 90° so their lighting matches the training
+  images. By default the lighting direction is measured on each image; buddy warns when that measurement is unclear
+  (consistency < 0.9, e.g. blurry DIC; also written to `img.json`). The lighting is set by the microscope, so for one
+  imaging session you can fix the turn instead: 0, 1, 2 or 3 (× 90°), e.g. the value most images of that session got
+  (`"dic_rotation_k"` in their `img.json`).
 
 **Check the result in napari** (step 4 of the bulk-processing notebook). Cells the model was
 unsure about are boxed in the `check these buds` layer:
@@ -53,12 +58,12 @@ The `bud → mother links` layer draws a line from each bud to its mother, and t
 (napari-buddy ≥ 0.1.0) shows / hides whole groups of layers. Flagged cells are also listed, with the reason, in `bud_flags.csv` in each image folder (`bud_pairs.csv`
 lists the pairs found, `bud_model_cells.csv` the model output per cell).
 
-**How good is it?** Tested on 198 hand-annotated cells from images the models never saw (chosen to
-over-represent the hard cases), the models assign buds to the right mother with a pairing F1 of 0.82
-(`with_ASH1CLB2`) and 0.80 (`DIC_DAPI_only`), and find most of the very small buds (< 1 µm²). Large buds
-(> 4 µm²) remain the weakest class: 81 % found by `DIC_DAPI_only`, 69 % by `with_ASH1CLB2`, so always check the
-flagged cells. Details: `methods.md`,
-scores per model: `buddy/models/bud_model_<model>.json`.
+**How good is it?** Tested on every cell of 14 fields from an imaging day the models never saw (240909), with the
+epoch and cut-off fixed in advance, the models assign buds to the right mother with a pairing F1 of 0.80
+(`with_ASH1CLB2`, 95% CI 0.76–0.83; precision 0.91, recall 0.72) and 0.75 (`DIC_DAPI_only`, 0.71–0.79; precision 0.80,
+recall 0.72). Large buds (> 4 µm²) remain the weakest class (61–65% found), so always check the flagged cells.
+Details: `methods.md`, scores per model: `buddy/models/bud_model_<model>.json`.
 
 **Train your own model** on your corrected images with `notebooks/05_train_bud_model.ipynb`
-(code: `buddy/buds/bud_training.py`; the model itself: `buddy/buds/bud_model.py`).
+(code: `buddy/buds/bud_training.py`; the model itself: `buddy/buds/bud_model.py`). Perhaps handy if you got your own bud data, perhaps with a different 
+optical setup to which you want to train a better suited model.  

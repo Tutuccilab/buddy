@@ -19,6 +19,7 @@ import numpy as np
 import pandas as pd
 from skimage import io
 
+from buddy.buds.bud_tools import BUD
 from buddy.paths import ImageFiles
 from buddy.quantification import spot_assignment
 from buddy.reading import readers
@@ -169,8 +170,8 @@ class Image:
         for ch in self.fluorescence_channels:
             r = self.results[ch]
             self.mrna[ch]["filtered"], r["filter_backend"] = detection.filter_background(
-                self.mrna[ch]["data"], self.parameters["sigma"], r["ifx_1"], r["ifx_2"], self._device(), f"channel {ch} filter")
-            log.info(f"..channel {ch} (slices {r['ifx_1']}-{r['ifx_2']}, {r['filter_backend']})")
+                self.mrna[ch]["data"], self.parameters["sigma"], self._device(), f"channel {ch} filter")
+            log.info(f"..channel {ch} ({r['filter_backend']})")
 
     def detect_spots(self):
         log.info("detecting spots")
@@ -181,7 +182,9 @@ class Image:
                 data["data"], data["filtered"], r["ifx_1"], r["ifx_2"], self.experiment.channels[ch]["threshold"],
                 self.parameters["scale"], self.parameters["spot_radius"], self._device(), f"channel {ch} detection")
             selected = data["filtered"][r["ifx_1"]:r["ifx_2"]]
-            io.imsave(f.filtered(ch), data["filtered"].astype("uint16"), check_contrast=False)     # slices outside the focus range are 0
+            saved = np.zeros_like(data["filtered"])                        # slices outside the focus range are 0
+            saved[r["ifx_1"]:r["ifx_2"]] = selected
+            io.imsave(f.filtered(ch), saved.astype("uint16"), check_contrast=False)
             readers.save_projection(f.filtered(ch), selected)              # for napari
             np.save(f.spots(ch), found)
             pd.DataFrame(found, columns=["z", "y", "x", "intensity", "filtered_intensity"]).to_csv(f.spots_csv(ch))
@@ -258,7 +261,9 @@ class Image:
         result["cells"].to_csv(f.bud_model_cells, index=False)
         self.results["bud_classification"] = {
             "model": model.name, "cut_off": model.cut_off, "snap": model.snap, "device": model.device,
-            "dic_rotation_k": int(result["dic_rotation"]), "n_cells": int(len(result["cells"])),
+            "dic_rotation_k": int(result["dic_rotation"]), "dic_rotation_fixed": model.dic_rotation is not None,
+            "dic_light": result.get("dic_light"),          # measured lighting direction (angle, consistency 0-1, cells)
+            "n_cells": int(len(result["cells"])),
             "n_pairs": int(len(result["pairs"])), "n_flags": int(len(result["flags"])),
             "bud_mask_md5": readers.md5(f.corrected_buds),          # lets a later run recognise hand-made edits
         }
@@ -277,7 +282,7 @@ class Image:
         self.dapi_masks = io.imread(f.corrected_nuclei)
         if f.corrected_buds.is_file():
             self.bud_masks = io.imread(f.corrected_buds)
-            bud_labels = np.where(self.bud_masks == 1, self.cell_masks, 0)
+            bud_labels = np.where(self.bud_masks == BUD, self.cell_masks, 0)
         else:
             self.bud_masks, bud_labels = None, None
             log.info("..no bud_corrected_masks.tif; assigning without bud compartment")

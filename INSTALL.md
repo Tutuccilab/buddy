@@ -19,6 +19,8 @@ buddy with all its dependencies (including the napari viewer and Jupyter),
 adds the `bioio-ome-tiff` writer plugin, installs the `napari-buddy` plugin
 if it sits next to this repo, and runs a quick import check.
 
+This prompt command should install all necessary dependencies. If necessary, steps below are detailed to install individual components.
+
 ## GPU (recommended)
 
 Omnipose and the bud model run much faster on an NVIDIA GPU. pip installs the **CPU-only** PyTorch
@@ -42,7 +44,7 @@ Which one was used is written to `img.json` (`filter_backend`, `detection_backen
 
 ## Bud-model weights
 
-The two trained bud models (`bud_model_DIC_DAPI_only.pt`, `bud_model_with_ASH1CLB2.pt`, ~100 MB each)
+The two trained bud models (`bud_model_DIC_DAPI_only_v2.pt`, `bud_model_with_ASH1CLB2_v2.pt`, ~100 MB each)
 download automatically to `buddy/models/` the first time automatic bud classification runs.
 Offline? Download them from the GitHub release page of this repository (assets of release
 `bud-models`) and put them in `buddy/models/`, or in any folder you give as

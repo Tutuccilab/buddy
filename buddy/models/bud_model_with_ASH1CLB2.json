@@ -1,8 +1,9 @@
 {
  "model": "with_ASH1CLB2",
  "model_type": "D",
+ "weights_file": "bud_model_with_ASH1CLB2_v2.pt",
  "weights_release": "bud-models",
- "source_run": "budE_ash epoch 16",
+ "source_run": "budH_ash epoch 30",
  "input_channels": [
   "DIC",
   "DAPI",
@@ -12,20 +13,25 @@
  "crop_px": 192,
  "cut_off": 0.5,
  "snap": true,
- "trained_on": "train + pairfit fields, labels corrected in the small-bud review (10 Oct 2026), late-M cells included; she2/she3 strains (YET563, YET572) left out",
- "checkpoint_and_cut_off_chosen_on": "gold set (198 hand-annotated cells of the test fields), pair F1 with snap",
- "gold_set_pair_F1_at_chosen_settings": 0.846,
- "gold_set_pair_F1_without_snap": 0.839,
- "gold_set_2fold": {
-  "pair_F1": 0.819,
-  "precision": 0.846,
-  "recall": 0.794,
-  "note": "epoch + cut-off chosen on one half of the gold fields, scored on the other, and the other way round (honest estimate); snap on"
+ "trained_on": "train + model-fit fields (66) of imaging days 220601, 241004, 250820 and 250822; whole imaging day 240909 left out (test replicates YET915 BR5, YET916 BR4, YET921 BR4 and the rest of that day) and test replicate 250820 YET572 BR5 left out; 6 validation fields only used to monitor training; day 220429 not used; late-M cells included; she2/she3 strains (YET563, YET572) left out",
+ "epoch_and_cut_off": "fixed in advance: last epoch (30), claim cut-off 0.5 - nothing chosen on the test fields",
+ "held_out_day_test": {
+  "cells": "all cells of the 14 test fields of the held-out imaging day 240909 (whole-field annotation, checked in a review of the model errors; cells marked unsure left out)",
+  "pair_F1": 0.799,
+  "pair_F1_95ci": [
+   0.76,
+   0.83
+  ],
+  "precision": 0.905,
+  "recall": 0.716,
+  "false_pairs_on_unbudded_cells": "20 / 1882",
+  "recall_by_bud_size_um2": {
+   "<1": 0.71,
+   "1-2": 0.78,
+   "2-4": 0.78,
+   ">4": 0.65
+  },
+  "note": "95% CI by bootstrap over cells (1000x); snap on"
  },
- "recall_by_bud_size_um2": {
-  "<1": 0.93,
-  "1-2": 0.93,
-  "2-4": 1.0,
-  ">4": 0.85
- }
+ "previous_version": "bud_model_with_ASH1CLB2.pt (budE run, epoch and cut-off chosen on the gold set; still in release bud-models)"
 }
