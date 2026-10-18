@@ -24,6 +24,11 @@
   old rule that let a weaker claim take a bud by scoring higher on that bud's pixels (and knock out the earlier mother)
   is gone; it never occurred on the 16 held-out test fields, which give identical pairs before and after. A close call
   is now: another cell claimed the same bud with a strength within 0.15 of the winner.
+- Spot detection (step 3): the background filter and the LoG detection run on the whole stack, and the in-focus range
+  is applied to the detected spots afterwards. Before, the stack was cut at the in-focus range first, which made the
+  lowest in-focus plane an edge of the LoG filter and a ridge of false local maxima there (hidden by dropping the two
+  lowest in-focus planes, `DROP_BOTTOM_SLICES`, now gone). Spot counts change: dim spots near the bottom of the focus
+  range are kept and the false ones are gone; rerun step 3 (and 5) to update existing results.
 - Spot decomposition (step 3) is now repeatable: Big-FISH builds the reference spot from up to 2000 randomly chosen
   spots, so channels with more spots could give slightly different decomposed spots on every run. The random generator
   is now seeded for this step (`DECOMPOSITION_SEED = 0` in `buddy/spots/detection.py`) and restored afterwards.
