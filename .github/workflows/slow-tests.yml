@@ -46,7 +46,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release download test-data-v1 --pattern field_A.zip --dir "$RUNNER_TEMP" --clobber
+          gh release download test-data-v2 --pattern field_A.zip --dir "$RUNNER_TEMP" --clobber
           rm -rf tests/data && mkdir -p tests/data
           python -c "import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall('tests/data')" "$RUNNER_TEMP/field_A.zip"
           echo "test data:"; ls -l "$RUNNER_TEMP/field_A.zip"; find tests/data/field_A/reference -type d
