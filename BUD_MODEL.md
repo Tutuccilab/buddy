@@ -11,7 +11,7 @@ spot counting per mother and bud works as before.
 **Switch it on / choose the model** in the config file:
 
 ```json
-"parameters": { "...": "...", "use_gpu": true, "gpu_spot_detection": true },
+"hardware": {"use_gpu": true, "gpu_spot_detection": true},
 "bud_classification": {
     "enabled": true,
     "model": "with_ASH1CLB2",

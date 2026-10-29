@@ -39,8 +39,25 @@ jobs:
           rm -rf tests/data && mkdir -p tests/data
           python -c "import sys, zipfile; [zipfile.ZipFile(f).extractall('tests/data') for f in sys.argv[1:]]" "$RUNNER_TEMP/field_A.zip" "$RUNNER_TEMP/vsi.zip"
           ls tests/data tests/data/vsi
-      - name: Slow tests (Omnipose, bud model, .vsi)
+      - name: Download the bud model weights (release bud-models; a private repository cannot be fetched anonymously)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download bud-models --dir buddy/models --clobber
+          ls -l buddy/models
+      - name: Slow tests, part 1 (Omnipose and the bud model on the test field)
         env:
           BUDDY_REQUIRE_TEST_DATA: "1"
           BUDDY_TEST_NO_DOWNLOAD: "1"
-        run: pytest -m slow --durations=10 -v
+        run: pytest -m slow --deselect tests/test_vsi_file.py --durations=10 -v
+      - name: Slow tests, part 2 (the real .vsi through Bio-Formats, in a fresh process)
+        if: always()
+        env:
+          BUDDY_REQUIRE_TEST_DATA: "1"
+          BUDDY_TEST_NO_DOWNLOAD: "1"
+        run: pytest -m slow tests/test_vsi_file.py --durations=10 -v
+      - name: Java crash report, if the JVM died
+        if: failure()
+        run: |
+          ls hs_err_pid*.log 2>/dev/null && head -80 hs_err_pid*.log || echo "no hs_err file"
+          java -version
