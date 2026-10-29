@@ -17,6 +17,10 @@ Each step reads one block (`buddy.where()`, README code map).
   recorded for `which_images` only when changed, so earlier results are not reported as different.
 - `cell_flags` is no longer in the example and is only written when it differs from the defaults: its settings
   are not meant to be tuned.
+- Fixed: Python's `faulthandler` is left off once the Java VM has started (it was switched back on after the
+  start). The JVM handles SIGSEGV itself (safepoints, null checks); with faulthandler's handler in place the process
+  aborted on Linux, typically during a garbage collection while reading a large `.vsi` - the crash of the tests on
+  GitHub's Linux runner. Windows was not affected.
 - Fixed: the GPU decomposition multiplied its filter kernel as `tuple * gamma`, which repeats the tuple instead of
   scaling it (harmless at the fixed `gamma=1`, wrong for any other value, an error for a float such as `1.0`).
 - **Old configs keep working.** A file with a `"parameters"` block is read as before (the blocks win where both

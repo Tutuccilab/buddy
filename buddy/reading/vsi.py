@@ -37,18 +37,19 @@ def loci():
             raise ImportError("jpype1 / bioformats_jar are not installed (pip install bioformats_jar); " + JAVA_HELP) from e
         if not jpype.isJVMStarted():
             jar = os.environ.get("BIOFORMATS_JAR", bioformats_jar.JAR)
-            # the JVM raises (and handles) memory faults on purpose while it starts; Python's faulthandler (on under
-            # pytest) would print them as "Windows fatal exception: access violation" although nothing is wrong
+            # Python's faulthandler (on under pytest) must be off while the JVM runs, not only while it starts: the
+            # JVM uses SIGSEGV for its own purposes (safepoints before a garbage collection, implicit null checks in
+            # compiled code) and handles it itself; with faulthandler's handler in place instead, the process aborts
+            # at the first such signal (on Linux typically during a GC while reading a large file; Windows reports
+            # "access violation" at start-up). JPype's documentation says the same. So it stays off from here on.
             import faulthandler
-            was_on = faulthandler.is_enabled()
-            faulthandler.disable()
+            if faulthandler.is_enabled():
+                faulthandler.disable()
+                log.debug("Python's faulthandler switched off: it conflicts with the Java VM's signal handling")
             try:
                 jpype.startJVM(classpath=[jar], convertStrings=False)
             except jpype.JVMNotFoundException as e:
                 raise RuntimeError(JAVA_HELP) from e
-            finally:
-                if was_on:
-                    faulthandler.enable()
             log.info(f"Java started for Bio-Formats ({Path(jar).name})")
         _loci = jpype.JPackage("loci")
         _loci.common.DebugTools.setRootLevel("ERROR")
