@@ -3,10 +3,14 @@ Helpers for processing several images at the same time (used by 01_fish_bulk_pro
 
 The CPU-heavy steps of one image do not depend on any other image, so they can run side by side in
 separate processes:
-    read_one(...)    step 1: read the .vsi + DIC, write the TIFF layers
-    spots_one(...)   step 3: focus, background filter, spot detection, decomposition, alignment
+    read_one(...)     step 1: read the .vsi + DIC, write the TIFF layers
+    segment_one(...)  step 2: Omnipose (the models are loaded once per worker process and kept)
+    spots_one(...)    step 3: focus, background filter, spot detection, decomposition, alignment
 They run the functions in buddy/pipeline.py in a worker process.
-GPU steps (Omnipose, bud model) stay in the notebook process, one image after the other.
+In the notebook the GPU steps (Omnipose, bud model) run in the notebook process, one image after the other.
+napari-buddy runs step 2 through segment_one in one worker process even on the GPU: Omnipose's native code
+corrupted the memory of the napari process on Windows (a later GPU step then hung or crashed), and a worker
+process that ends with the step cannot do that.
 
 Each worker records its step times in the image's img.json.
 
@@ -48,6 +52,21 @@ def read_one(params, cfg_file, inputdir, outputdir, mode):
     from buddy import pipeline
     exp = _experiment(cfg_file, inputdir, outputdir)
     return str(pipeline.read_image(params, exp, mode))
+
+
+_SEGMENTER = {}        # the Experiment with the loaded Omnipose models, one per worker process (keyed by its settings)
+
+
+def segment_one(json_file, cfg_file, inputdir, outputdir):
+    """Step 2 for one image in a worker process (see buddy.pipeline.segment_image); the Omnipose models are loaded
+    the first time this process is used and kept for the next images."""
+    from buddy import pipeline
+    key = (cfg_file, inputdir, outputdir)
+    if _SEGMENTER.get("key") != key:
+        exp = _experiment(cfg_file, inputdir, outputdir)
+        exp.init_omnipose()
+        _SEGMENTER.update(key=key, exp=exp)
+    return str(pipeline.segment_image(json_file, _SEGMENTER["exp"]))
 
 
 def spots_one(json_file, cfg_file, inputdir, outputdir, mode, parameter_overrides=None):

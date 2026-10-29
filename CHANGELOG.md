@@ -19,8 +19,9 @@ Each step reads one block (`buddy.where()`, README code map).
   are not meant to be tuned.
 - Loading the bud model logs what it does, and the installers load it once at the end: the first load after an
   install takes minutes (the weights file is scanned on first read, CUDA starts up), later loads about 15 s.
-  napari-buddy 0.4.0 loads it in step 2 before Omnipose: loaded after Omnipose in the same napari process, the copy
-  of the weights to the GPU could hang (Windows).
+  `parallel.segment_one` runs step 2 in a worker process with the Omnipose models loaded once; napari-buddy 0.4.0
+  uses it, because Omnipose's native code corrupted the napari process's memory on Windows (the next GPU step hung
+  or crashed).
 - Fixed: `install.ps1` passed the Omnipose requirement as `@Omnipose` (PowerShell splats a string into its characters:
   `o m n i p o s e = = 1 . 1 . 4`), so the Windows installer stopped at the Omnipose step; now `$Omnipose`.
 - Fixed: Python's `faulthandler` is left off once the Java VM has started (it was switched back on after the
