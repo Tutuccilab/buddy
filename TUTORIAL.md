@@ -65,7 +65,7 @@ decides" (`threshold: null` = automatic threshold, `dic_rotation: null` = measur
   `beta` (a region must be at least `beta` x the reference spot; lower = more regions), `gamma` (width of the
   denoising filter, x spot radius); the defaults `0.5, 2, 1` are Big-FISH's.
 - `segmentation` (step 2) — Omnipose and the clean-up of the masks (napari: the *Omnipose* and *General* tabs of
-  *Create config file*):
+  *Create config file*; the `spots` block above is its *Spots* tab):
   ```json
   "segmentation": {"organism": "S.cerevisiae", "cell_model": "cyto2_omni", "nucleus_model": "nuclei", "tile": false,
                    "min_size": 10, "nuclei_min_size": 10,
@@ -107,7 +107,7 @@ A config of buddy 0.5 or older (one `"parameters"` block for everything) is stil
 saves it in the new layout.
 
 You can hand-edit the JSON, or build one in napari: **Plugins → napari-buddy →
-Create config file** (tabs *General* and *Omnipose*), fill in the channels and settings, and save.
+Create config file** (tabs *General*, *Spots* and *Omnipose*), fill in the channels and settings, and save.
 
 > **Common gotcha:** if the log says *"ignoring unknown channel token '…'"* during
 > reading, a channel's `filter` in the config doesn't match the filter name the

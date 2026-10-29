@@ -1,5 +1,5 @@
 # Runs the fast tests (unit tests + the regression test from saved Omnipose masks) on every push and pull
-# request, on Linux and Windows (Java for the Bio-Formats test is preinstalled on the runners). The slow tests (Omnipose, bud model) run on your own machine: `pytest -m slow`.
+# request, on Linux and Windows (Java 11 for the Bio-Formats test via setup-java). The slow tests (Omnipose, bud model) run on your own machine: `pytest -m slow`.
 name: tests
 
 on:
@@ -25,12 +25,18 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
+      - uses: actions/setup-java@v4           # Java 11 for Bio-Formats, as the installers' conda env (openjdk=11)
+        with:
+          distribution: temurin
+          java-version: "11"
       - name: Install PyTorch (CPU build, much smaller than the default CUDA build; version from the constraints)
         run: pip install -c ${{ matrix.constraints }} torch torchvision --extra-index-url https://download.pytorch.org/whl/cpu
       - name: Install buddy (the pinned versions of constraints/, as the installers do; Omnipose is not needed here)
         run: pip install -c ${{ matrix.constraints }} -e ".[test]"
       - name: Lint (ruff)
         run: ruff check buddy tests
+      - name: Bio-Formats smoke test (Java starts, the jar is found; torch imported first, as in the tests)
+        run: python -c "import torch; from buddy.reading.vsi import bioformats_version; print('Bio-Formats', bioformats_version())"
       - name: Download the test data (with the workflow's token, so a private repository works too)
         shell: bash
         env:
