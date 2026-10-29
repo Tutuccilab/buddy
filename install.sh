@@ -41,11 +41,12 @@ conda create --name "${ENV_NAME}" python=3.12 conda-forge::openjdk=11 -y
 run() { conda run --no-capture-output -n "${ENV_NAME}" "$@"; }
 
 # PyTorch. Linux: the PyPI wheel is the CUDA 12.4 build (2.5 GB, with its CUDA libraries as dependencies) and works
-# with any NVIDIA driver >= 525; without a GPU (or with "cpu") the CPU wheel is installed first, so pip keeps it.
+# with any NVIDIA driver >= 525; without a GPU (or with "cpu") the CPU wheel is installed first, so pip keeps it
+# (--extra-index-url, not --index-url: torch's own dependencies such as setuptools come from PyPI; the +cpu wheel wins).
 # macOS: no CUDA, the default wheel is the right one.
 if [ "${PLATFORM}" = "linux" ] && { [ "${USE_GPU}" = "cpu" ] || ! command -v nvidia-smi >/dev/null 2>&1; }; then
     echo "==> No NVIDIA GPU found (or 'cpu' given): installing the CPU version of PyTorch"
-    run pip install -c "${CONSTRAINTS}" torch torchvision --index-url https://download.pytorch.org/whl/cpu
+    run pip install -c "${CONSTRAINTS}" torch torchvision --extra-index-url https://download.pytorch.org/whl/cpu
 fi
 
 echo "==> Installing buddy (editable, with test + napari + notebooks extras; versions from ${CONSTRAINTS})"

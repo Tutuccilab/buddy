@@ -19,7 +19,7 @@ jobs:
           python-version: "3.12"
           cache: pip
       - name: Install PyTorch (CPU build; version from the constraints)
-        run: pip install -c constraints/linux.txt torch torchvision --index-url https://download.pytorch.org/whl/cpu
+        run: pip install -c constraints/linux.txt torch torchvision --extra-index-url https://download.pytorch.org/whl/cpu
       - name: Install buddy and Omnipose (the pinned versions, as the installers do)
         run: |
           pip install -c constraints/linux.txt -e ".[test]"

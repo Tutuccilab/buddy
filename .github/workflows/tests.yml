@@ -26,7 +26,7 @@ jobs:
           python-version: "3.12"
           cache: pip
       - name: Install PyTorch (CPU build, much smaller than the default CUDA build; version from the constraints)
-        run: pip install -c ${{ matrix.constraints }} torch torchvision --index-url https://download.pytorch.org/whl/cpu
+        run: pip install -c ${{ matrix.constraints }} torch torchvision --extra-index-url https://download.pytorch.org/whl/cpu
       - name: Install buddy (the pinned versions of constraints/, as the installers do; Omnipose is not needed here)
         run: pip install -c ${{ matrix.constraints }} -e ".[test]"
       - name: Lint (ruff)
