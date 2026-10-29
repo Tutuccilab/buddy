@@ -190,10 +190,14 @@ class BudModel:
             raise ValueError(f"unknown bud model '{model_name}', choose one of {list(MODELS)}")
         device = pick_device(use_gpu)
         network = build_network(n_input_channels(model_name))
-        # the weights are unpickled on the CPU: unpickling straight onto the GPU asks CUDA for the current device
-        # from the loading thread, which stalled now and then in napari (step 3 after step 2); .to(device) below
-        # moves the network to the GPU afterwards
-        state = torch.load(weights_file or weights_path(model_name, weights_dir), map_location="cpu", weights_only=True)
+        # The weights are unpickled on the CPU and moved to the GPU afterwards. In napari, moving them to the GPU
+        # from a worker thread after Omnipose had used the GPU in an earlier worker thread hung (Windows, seen
+        # with the copy in .to(device)); napari-buddy therefore loads this model before Omnipose runs. The first
+        # load after an install can take minutes (the file is scanned on first read, CUDA starts up), later ~15 s.
+        path = weights_file or weights_path(model_name, weights_dir)
+        log.info(f"loading bud model '{model_name}' from {Path(path).name} onto {device} "
+                 "(the first time after an install this can take a few minutes)")
+        state = torch.load(path, map_location="cpu", weights_only=True)
         network.load_state_dict(state)
         network.to(device).eval()
         log.info(f"bud model '{model_name}' loaded on {device}")

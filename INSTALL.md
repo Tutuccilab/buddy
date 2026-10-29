@@ -155,6 +155,11 @@ The tests download a small test field on first use (release `test-data-v3`, 70 M
   `python -c "from buddy.reading.vsi import BioFormatsFile; f = BioFormatsFile(r'path/to/file.vsi'); print(f.series_names, f.shape(0))"`.
   Another Bio-Formats version can be tried without reinstalling: set `BIOFORMATS_JAR` to the path of a
   `bioformats_package.jar` (from downloads.openmicroscopy.org) before starting Python.
+- **Step 3 (or step 2 in napari) sits at "loading the bud model" for minutes.** The first load of the bud-model weights
+  after an install is slow (Windows scans the 93 MB file on its first read, CUDA starts up); the installer does one
+  load at the end for that reason, and later loads take about 15 s. The napari panel shows how long it has been
+  waiting. If it stays there for more than ten minutes, close napari and run step 3 again: it then loads the model
+  before anything else used the GPU.
 - **CUDA out of memory in step 2** (small GPU, e.g. 4 GB): set `"segmentation": {"tile": true}` in the config file
   (Omnipose on tiles) or `"use_gpu": false`; the error message says so too. See TUTORIAL.md, section 2.1.
 - **Omnipose GUI** (optional, handy for finding segmentation settings): run `omnipose` from the command line.

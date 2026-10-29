@@ -73,6 +73,9 @@ rm -rf "${TMPDIR}"
 
 echo "==> Smoke test (imports only)"
 run python -c "import buddy, bigfish, bioformats_jar, torch, torchvision; from buddy.segmentation import masks; masks.check_omnipose(); print('buddy imports OK | GPU available:', torch.cuda.is_available())"
+# load the bud model once now: the first load after an install takes minutes (file scan, CUDA start-up), later ~15 s
+echo "==> Loading the bud model once (the first load is slow; it is fast from now on)"
+run python -c "from buddy.buds.bud_model import BudModel; BudModel.load('DIC_DAPI_only', use_gpu=True); print('bud model OK')"
 run java -version
 
 echo ""
