@@ -1,6 +1,7 @@
 """The decomposition of dense regions is repeatable: Big-FISH builds its reference spot from up to 2000 randomly
 chosen spots, so with more spots than that the result depended on NumPy's random state until DECOMPOSITION_SEED."""
 import numpy as np
+import pytest
 
 from buddy.spots import detection
 
@@ -34,3 +35,23 @@ def test_decomposition_is_repeatable_and_leaves_random_state_alone():
     assert np.array_equal(ref1, ref2)
     assert np.array_equal(d1, d2)
     assert np.array_equal(r1, r2)
+
+
+def test_gpu_decomposition_accepts_a_float_gamma(monkeypatch):
+    """gamma from the config may be a float (1.0, 1.5); the GPU version must scale the kernel per axis, as Big-FISH does."""
+    from bigfish.detection.utils import get_object_radius_pixel
+
+    from buddy.spots import gpu_detection
+    seen = {}
+
+    def fake_remove_background(image, sigma, device="cuda"):
+        seen["sigma"] = sigma
+        return image
+
+    monkeypatch.setattr(gpu_detection, "remove_background", fake_remove_background)
+    stack = (np.random.default_rng(0).random((5, 40, 40)) * 1000).astype(np.uint16)
+    spots = np.array([[2, 10, 10], [2, 30, 30]])
+    gpu_detection.decompose_dense(stack, spots, SCALE, SPOT_RADIUS, alpha=0.5, beta=2.0, gamma=1.5, device="cpu")
+    radius = get_object_radius_pixel(voxel_size_nm=SCALE, object_radius_nm=SPOT_RADIUS, ndim=3)
+    assert len(seen["sigma"]) == 3
+    assert seen["sigma"] == pytest.approx(tuple(r * 1.5 for r in radius))

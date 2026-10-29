@@ -174,7 +174,8 @@ def decompose_dense(image, spots, voxel_size, spot_radius, alpha=0.5, beta=2, ga
     """
     from bigfish.detection import decompose_dense as bigfish_decompose_dense
     if gamma > 0 and len(spots):
-        kernel = tuple(get_object_radius_pixel(voxel_size_nm=voxel_size, object_radius_nm=spot_radius, ndim=3) * gamma)
+        radius = get_object_radius_pixel(voxel_size_nm=voxel_size, object_radius_nm=spot_radius, ndim=3)
+        kernel = tuple(r * gamma for r in radius)             # per axis, as Big-FISH (a tuple times an int would repeat it)
         image = remove_background(image, kernel, device=device)
     return bigfish_decompose_dense(image, spots, voxel_size=voxel_size, spot_radius=spot_radius,
                                    alpha=alpha, beta=beta, gamma=0)

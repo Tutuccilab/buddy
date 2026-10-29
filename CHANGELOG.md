@@ -17,6 +17,8 @@ Each step reads one block (`buddy.where()`, README code map).
   recorded for `which_images` only when changed, so earlier results are not reported as different.
 - `cell_flags` is no longer in the example and is only written when it differs from the defaults: its settings
   are not meant to be tuned.
+- Fixed: the GPU decomposition multiplied its filter kernel as `tuple * gamma`, which repeats the tuple instead of
+  scaling it (harmless at the fixed `gamma=1`, wrong for any other value, an error for a float such as `1.0`).
 - **Old configs keep working.** A file with a `"parameters"` block is read as before (the blocks win where both
   are given); nothing changes in memory (`exp.parameters`, `img.json`, `which_images`), so old results are not
   reported as "processed with other settings". `buddy.config.write_config` saves any config in the new layout.
