@@ -1,0 +1,84 @@
+{
+  "_about": "buddy config: one block per step, every setting at its default (explained in TUTORIAL.md, section 5)",
+  "_values": "true / false switch a setting on or off; null = not set, buddy decides (threshold null = automatic, dic_rotation null = measured per image, ash_channel null in cell_cycle = the ash_channel of bud_classification)",
+  "inputdir": "../../test yourself/small example set/YET572 BR4",
+  "outputdir": "../../test yourself/small example set/YET572 BR4/output",
+  "if_already_processed": "ask",
+
+  "channels": {
+    "_about": "step 1 (read): filter = channel name in the microscope file, threshold null = automatic, tiff_channel for TIFF stacks",
+    "ASH1CLB2": {"filter": "CY5", "mrna": "ASH1CLB2", "threshold": 50, "colormap": "magenta", "tiff_channel": null},
+    "SRL1": {"filter": "CY3.5 NAR", "mrna": "SRL1", "threshold": 50, "colormap": "gold", "tiff_channel": null},
+    "SUN4": {"filter": "CY3", "mrna": "SUN4", "threshold": 50, "colormap": "lime", "tiff_channel": null},
+    "DAPI": {"filter": "DAPI", "mrna": "DAPI", "threshold": null, "colormap": "blue", "tiff_channel": null}
+  },
+
+  "spots": {
+    "_about": "step 3 (spots): scale and spot_radius (z, y, x) in nm, sigma (z, y, x) in px - required; patch_size for the in-focus planes; decomposition of dense regions (Big-FISH alpha, beta, gamma), the same for every channel",
+    "scale": [200, 65, 65],
+    "spot_radius": [880, 120, 120],
+    "sigma": [0.75, 2.3, 2.3],
+    "patch_size": [200, 200],
+    "decomposition": {"alpha": 0.5, "beta": 2, "gamma": 1}
+  },
+
+  "segmentation": {
+    "_about": "step 2 (segment): Omnipose and the mask clean-up. use_preset true = the organism's Omnipose settings (cells / nuclei show them); to tune, set use_preset false and edit cells / nuclei",
+    "organism": "S.cerevisiae",
+    "cell_model": "cyto2_omni",
+    "nucleus_model": "nuclei",
+    "tile": false,
+    "min_size": 10,
+    "nuclei_min_size": 10,
+    "use_preset": true,
+    "cells": {"diameter": 50, "mask_threshold": -3, "flow_threshold": 1},
+    "nuclei": {"diameter": 0, "mask_threshold": 0, "flow_threshold": 0},
+    "min_cell_area": 20,
+    "expand_px": 0,
+    "remove_edge_cells": false
+  },
+
+  "bud_classification": {
+    "_about": "step 3, bud model: DIC_DAPI_only (any strain) or with_ASH1CLB2 (not for she2/she3); enabled: false = annotate buds by hand",
+    "enabled": true,
+    "model": "DIC_DAPI_only",
+    "ash_channel": "ASH1CLB2",
+    "overwrite_manual_corrections": false,
+    "weights_dir": null,
+    "snap": true,
+    "dic_rotation": null
+  },
+
+  "cell_cycle": {
+    "_about": "cell-cycle phase per cell: G1 (unbudded, <= g1_max_ash ASH1/CLB2), S / G2 / M by bud area (um2)",
+    "enabled": true,
+    "ash_channel": null,
+    "g1_max_ash": 5,
+    "s_g2_bud_um2": 2.0,
+    "max_bud_um2": 15.0,
+    "min_length_um": 2.0,
+    "max_length_um": 20.0
+  },
+
+  "hardware": {
+    "_about": "use_gpu: Omnipose + bud model; gpu_spot_detection: the spot steps; without a GPU all runs on the CPU",
+    "use_gpu": true,
+    "gpu_spot_detection": true
+  },
+
+  "tiff_input": {
+    "_about": "step 1, TIFF stacks only: the DIC channel inside the stack and the axis order when the file does not say",
+    "dic_channel": "DIC",
+    "tiff_axes": null
+  },
+
+  "experiments": [
+    {"strain": "YET918", "condition": "ΔSUN4"},
+    {"strain": "YET563", "condition": "ΔSHE2"},
+    {"strain": "YET572", "condition": "ΔSHE3"},
+    {"strain": "YET915", "condition": "WT"},
+    {"strain": "YET916", "condition": "ΔSSD1"},
+    {"strain": "YET919", "condition": "ΔMPT5"},
+    {"strain": "YET921", "condition": "ΔSEC72"}
+  ]
+}

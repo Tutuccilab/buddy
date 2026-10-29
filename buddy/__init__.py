@@ -4,7 +4,11 @@ buddy: FISH image-analysis pipeline.
 Import the pieces you need directly from their submodules, e.g.::
 
     from buddy.experiment import Experiment
-    from buddy.image import Image
+    from buddy import pipeline
+
+Where is what: ``buddy.where()`` prints, per pipeline step, the function in buddy/pipeline.py, the module that does
+the work, the block of the config file it reads and the files it writes (``buddy.where("segment")`` for one step).
+The same table is in README.md ("Where things are").
 
 This module is intentionally empty so that ``import buddy`` stays cheap:
 the heavy dependencies (big-fish, omnipose/torch, bio-formats) live in
@@ -19,6 +23,12 @@ _warnings.filterwarnings("ignore", category=FutureWarning, module=r"bigfish(\.|$
 _warnings.filterwarnings("ignore", message=r"chan to seg' has value range of ZERO")       # Omnipose: the empty channels of the composite
 _warnings.filterwarnings("ignore", message=r".*torch\.load.*weights_only.*", category=FutureWarning)
 _warnings.filterwarnings("ignore", category=DeprecationWarning, module=r"aicsimageio(\.|$)")  # old aicsimageio pulled in by Omnipose
+
+
+def where(step=None):
+    """Print where each pipeline step lives (see buddy/pipeline.py CODE_MAP); step: "segment", 3, "spots", ... or None for all."""
+    from buddy.pipeline import where as _where
+    _where(step)
 
 
 # napari-buddy versions that work with this buddy (napari-buddy 0.1.0 imports modules that moved in buddy 0.2.0;

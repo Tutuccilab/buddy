@@ -1,12 +1,15 @@
-#  installer for Windows (run from the Anaconda Prompt, in the buddy repo root)
+# buddy installer for Windows (run from the Anaconda Prompt, in the buddy repo root)
 #
-#   powershell -ExecutionPolicy Bypass -File install.ps1 -NapariBuddyPath 
+#   powershell -ExecutionPolicy Bypass -File install.ps1
 #
 # Optional args:
-#   -NapariBuddyPath "..\napari-buddy"   path to the napari-buddy repo
+#   -NapariBuddyPath "..\napari-buddy"      path to the napari-buddy repo
 #   -EnvName "buddy"                        conda env name
 #   -CPU                                    do not install the GPU (CUDA) version of PyTorch
-#   cd buddy 
+#
+# An existing environment of that name is removed first, so the script can be run again after a failed install.
+# Every package version comes from constraints\windows.txt, so every install gets the same packages.
+# macOS / Linux: install.sh (same steps). What the script does, and what to do when it fails: INSTALL.md.
 
 param(
     [string]$NapariBuddyPath = "..\napari-buddy",
@@ -15,54 +18,59 @@ param(
 )
 $ErrorActionPreference = "Stop"
 
-Write-Host "==> Creating conda environment '$EnvName' (Python 3.10, Java 11 + Maven for reading .vsi files)"
-# Java + Maven come from conda-forge, so Bio-Formats does not have to download a Java on first use
-# (which fails without internet or behind a proxy). Activating the env sets JAVA_HOME.
-conda create --name $EnvName python=3.10 conda-forge::openjdk=11 conda-forge::maven -y
+if (-not (Test-Path "pyproject.toml")) { throw "Run this from the buddy repo root (the folder with pyproject.toml)." }
+if (-not (Get-Command conda -ErrorAction SilentlyContinue)) { throw "conda not found: run this in the Anaconda Prompt (INSTALL.md)." }
 
-Write-Host "==> Installing buddy (editable, with test + napari + notebooks extras)"
-# The 'napari' extra pulls in napari[pyqt6] - the viewer + Qt backend -
-# INTO this env, so 'python -m napari' launches from here and never falls
-# back to a base-conda napari.
-conda run --no-capture-output -n $EnvName pip install -e ".[test,napari,notebooks]"
+$Constraints = "constraints\windows.txt"
+$Omnipose = (Get-Content $Constraints | Where-Object { $_ -match '^omnipose==' })
 
-Write-Host "==> Ensuring bioio OME-TIFF writer plugin"
-# bioio 3.x split its writers into separate plugin packages, so
-# buddy\image.py imports OmeTiffWriter from bioio_ome_tiff. Install it
-# explicitly so this works even if the on-disk pyproject.toml predates
-# that dependency.
-conda run --no-capture-output -n $EnvName pip install "bioio-ome-tiff"
+function Run { conda run --no-capture-output -n $EnvName @args; if ($LASTEXITCODE -ne 0) { throw "step failed: $args" } }
+
+if ((conda env list) -match "^$EnvName\s") {
+    Write-Host "==> Removing the existing conda environment '$EnvName'"
+    conda env remove --name $EnvName -y
+}
+
+Write-Host "==> Creating conda environment '$EnvName' (Python 3.12, Java 11 for reading .vsi files)"
+# Java comes from conda-forge (activating the env sets JAVA_HOME); Bio-Formats itself is a pip package (bioformats_jar).
+conda create --name $EnvName python=3.12 conda-forge::openjdk=11 -y
+
+Write-Host "==> Installing buddy (editable, with test + napari + notebooks extras; versions from $Constraints)"
+# The 'napari' extra pulls the napari viewer + Qt backend INTO this env, so 'python -m napari' launches
+# from here and never falls back to a base-conda napari.
+Run pip install -c $Constraints -e ".[test,napari,notebooks]"
+
+Write-Host "==> Installing Omnipose ($Omnipose, without its own dependency list: what it needs is in pyproject.toml)"
+Run pip install --no-deps @Omnipose
 
 if (Test-Path $NapariBuddyPath) {
     Write-Host "==> Installing napari-buddy plugin from $NapariBuddyPath"
-    conda run --no-capture-output -n $EnvName pip install -e $NapariBuddyPath
+    Run pip install -c $Constraints -e $NapariBuddyPath
 } else {
     Write-Host "==> napari-buddy not found at '$NapariBuddyPath' - skipping."
     Write-Host "    Install it later with: conda activate $EnvName; pip install -e <path-to-napari-buddy>"
 }
 
-# GPU: pip installs the CPU-only PyTorch by default. With an NVIDIA GPU, swap in the CUDA build so that
-# Omnipose and the bud model run on the GPU (much faster). numpy is re-pinned below 2 afterwards.
+# GPU: on Windows the PyPI PyTorch is CPU-only. With an NVIDIA GPU, swap in the CUDA 12.1 build (same version,
+# self-contained wheel) so that Omnipose, the bud model and spot detection run on the GPU.
 $hasGpu = $null -ne (Get-Command nvidia-smi -ErrorAction SilentlyContinue)
 if ($hasGpu -and -not $CPU) {
     Write-Host "==> NVIDIA GPU found: installing PyTorch with CUDA support"
     # --no-deps: only swap torch (+ torchvision), keep everything else; retries: the file is ~2.5 GB
-    conda run --no-capture-output -n $EnvName pip install --force-reinstall --no-deps --no-cache-dir --timeout 120 --retries 10 "torch==2.5.1" "torchvision==0.20.1" --index-url https://download.pytorch.org/whl/cu121
-    conda run --no-capture-output -n $EnvName pip install "numpy<2"
+    Run pip install --force-reinstall --no-deps --no-cache-dir --timeout 120 --retries 10 -c $Constraints torch torchvision --index-url https://download.pytorch.org/whl/cu121
 } else {
     Write-Host "==> No NVIDIA GPU found (or -CPU given): keeping the CPU version of PyTorch"
 }
 
 Write-Host "==> Smoke test (imports only)"
-conda run --no-capture-output -n $EnvName python -c "import buddy, bigfish, omnipose, bioio_ome_tiff, segmentation_models_pytorch, torch; print('buddy imports OK | GPU available:', torch.cuda.is_available())"
-conda run --no-capture-output -n $EnvName java -version
+Run python -c "import buddy, bigfish, bioformats_jar, torch, torchvision; from buddy.segmentation import masks; masks.check_omnipose(); print('buddy imports OK | GPU available:', torch.cuda.is_available())"
+Run java -version
 
 Write-Host ""
 Write-Host "Done. Next steps:"
 Write-Host "  conda activate $EnvName"
-Write-Host "  pytest buddy/tests/test_image.py -v    # full pipeline test on example data"
-Write-Host "  python -m napari                       # launch viewer; check Plugins -> buddy"
-Write-Host "  python -m notebook                    # run the analysis notebooks"
+Write-Host "  pytest -m 'not slow'                   # fast tests (about a minute)"
+Write-Host "  python -m napari                       # the viewer; Plugins -> Napari Buddy"
+Write-Host "  python -m notebook notebooks           # the analysis notebooks"
 Write-Host ""
-Write-Host "Tip: always launch with 'python -m napari' (not bare 'napari') so it"
-Write-Host "runs THIS env's napari and can't get bounced to base conda."
+Write-Host "Tip: always launch with 'python -m napari' (not bare 'napari') so it runs THIS env's napari."

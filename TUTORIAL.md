@@ -16,31 +16,29 @@ detection parameters, correcting masks, and annotating and reassigning buds.
 
 Install buddy and napari-buddy as described in [INSTALL.md](INSTALL.md): one command on Windows, macOS and
 Linux; GPU set-up, manual install and troubleshooting are there too. You need Anaconda or Miniconda and Git;
-Python 3.10 is installed for you, internet is needed on the first run, and a GPU is optional.
+Python 3.12 is installed for you, internet is needed on the first run, and a GPU is optional.
 
 ### 1.1 Expected folder layout
 
 The two repos must sit **side by side** in the same parent folder — the plugin is
-installed by relative path and several notebooks reach across with `..\..`:
+installed by relative path and the notebooks find the example data from `ROOT` (the folder above both repos):
 
 ```
 <parent>/
 ├── buddy/               <- the buddy repo
-│   ├── buddy/           <- the importable package (image.py, experiment.py, …)
-│   │   ├── config_files/
+│   ├── buddy/           <- the importable package (pipeline.py, image.py, …)
 │   │   └── models/
+│   ├── config_files/    <- example config (config_example.json: every setting written out)
 │   └── notebooks/       <- 01_… to 05_… notebooks
 └── napari-buddy/        <- the plugin repo
     └── napari_buddy/    (_reader.py, _bud_widget.py, _config_widget.py, …)
 ```
 
-### 1.2 Two things that are slow *once*
+### 1.2 Slow once
 
-- **First `.vsi` read** downloads a Java runtime (`Fetching zulu-jre:11 using
-  cjdk…`). Needs internet once; cached afterwards. Offline/behind a proxy?
-  Uncomment `openjdk=11` and `maven` in `environment.yml` to get Java from conda
-  instead.
-- **First segmentation** downloads the Omnipose/Cellpose model weights.
+The first segmentation downloads the Omnipose model weights, the first automatic bud classification the bud-model
+weights (see INSTALL.md → Bud-model weights). Both need internet once and are cached afterwards. (Bio-Formats, for
+`.vsi` files, is installed with buddy; nothing is fetched on the first read.)
 
 ---
 
@@ -48,28 +46,47 @@ installed by relative path and several notebooks reach across with `..\..`:
 
 ### 2.1 The configuration file
 
-Everything the pipeline needs to know about an experiment lives in one JSON
-config (see `config_files/…/config…json`). The key fields:
+Everything the pipeline needs to know about an experiment lives in one JSON config, with **one block per pipeline
+step**. `config_files/config_example.json` has every block written out with the values used for the paper and a
+short `_about` comment per block (keys that start with `_` are comments), so copy it and change what differs for
+your experiment. Only `inputdir`, `outputdir`, `channels` and the three required spot settings are mandatory; a
+setting that is left out gets the default of the example. Relative `inputdir` / `outputdir` are taken relative to
+the folder of the config file. Values: `true` / `false` switch a setting on or off; `null` means "not set, buddy
+decides" (`threshold: null` = automatic threshold, `dic_rotation: null` = measured per image).
 
-- `parameters.scale` — voxel size in nm `[z, y, x]` (e.g. `[200, 65, 65]`).
-- `parameters.spot_radius` — expected spot radius in nm `[z, y, x]`
-  (e.g. `[880, 120, 120]`).
-- `parameters.sigma` — Gaussian background-subtraction σ `[z, y, x]`.
-- `parameters.patch_size` — focus-detection patch, e.g. `[200, 200]`.
-- `parameters.organism` — `"S.cerevisiae"` or `"E.coli"` (selects segmentation
-  parameters).
-- `channels` — one entry per channel keyed by transcript, each with a `filter`
-  (the microscope filter name, **must match the `.vsi` scene exactly**, e.g.
-  `"CY3.5 NAR"`), an `mrna` name, a `colormap`, and an optional detection
-  `threshold`.
-- `parameters.min_cell_area` / `parameters.expand_px` — step 2: remove cells smaller than this
-  (px, default 20) / grow every cell by this many px (default 0).
-- `parameters.remove_edge_cells` — `true`: step 2 removes cells touching the image edge (they are
-  incomplete: too few RNAs, bud possibly outside the image). Default `false`.
-- `parameters.use_gpu` — `true` (default): run Omnipose and the bud model on the GPU
-  when one is available.
-- `parameters.gpu_spot_detection` — `true` (default): with a GPU, also run the background
-  filter and spot detection on it (same spots as Big-FISH).
+- `channels` (step 1) — one entry per channel keyed by transcript, each with a `filter` (the microscope filter
+  name, **must match the `.vsi` scene exactly**, e.g. `"CY3.5 NAR"`), an `mrna` name, a `colormap`, and an
+  optional detection `threshold` (left out or `null`: Big-FISH's automatic threshold).
+- `spots` (step 3) — `scale`: voxel size in nm `[z, y, x]` (e.g. `[200, 65, 65]`); `spot_radius`: expected spot
+  radius in nm `[z, y, x]` (e.g. `[880, 120, 120]`); `sigma`: Gaussian background-subtraction σ `[z, y, x]`;
+  `patch_size`: focus-detection patch, e.g. `[200, 200]`. The first three are required. `decomposition`: the
+  Big-FISH settings for splitting dense regions into single molecules, the same for every channel -
+  `alpha` (intensity of one molecule as a fraction of the reference spot; lower = more molecules per region),
+  `beta` (a region must be at least `beta` x the reference spot; lower = more regions), `gamma` (width of the
+  denoising filter, x spot radius); the defaults `0.5, 2, 1` are Big-FISH's.
+- `segmentation` (step 2) — Omnipose and the clean-up of the masks (napari: the *Omnipose* and *General* tabs of
+  *Create config file*):
+  ```json
+  "segmentation": {"organism": "S.cerevisiae", "cell_model": "cyto2_omni", "nucleus_model": "nuclei", "tile": false,
+                   "min_size": 10, "nuclei_min_size": 10,
+                   "use_preset": true,
+                   "cells": {"diameter": 50, "mask_threshold": -3, "flow_threshold": 1},
+                   "nuclei": {"diameter": 0, "mask_threshold": 0, "flow_threshold": 0},
+                   "min_cell_area": 20, "expand_px": 0, "remove_edge_cells": false}
+  ```
+  `organism` (`"S.cerevisiae"` or `"E.coli"`) selects the Omnipose preset for the cells (the presets are in
+  `buddy/config.py`, `OMNIPOSE_PRESETS`). With `use_preset: true` that preset is used and `cells` / `nuclei` only
+  show its main values (the example spells out the yeast preset; switching `organism` is enough). To tune
+  Omnipose, set `use_preset: false` and edit `cells` / `nuclei`: any preset key can be given there (`diameter`,
+  `mask_threshold`, `flow_threshold`, `channels`, `niter`, ...), the rest stays at the preset. `min_size` /
+  `nuclei_min_size`: the smallest cell / nucleus in px. `tile: true` runs the networks on tiles - much less GPU
+  memory, a little slower; the fix for *CUDA out of memory* in step 2. Clean-up: cells smaller than `min_cell_area`
+  px are dropped, `expand_px` grows every cell, `remove_edge_cells: true` drops cells touching the image edge (they
+  are incomplete: too few RNAs, bud possibly outside the image). The settings actually used are written to the
+  image's `img.json`.
+- `hardware` — `use_gpu` (`true`: Omnipose and the bud model on the GPU when one is available) and
+  `gpu_spot_detection` (`true`: with a GPU, also the background filter, spot detection and decomposition on it;
+  same spots as Big-FISH). `tiff_input` (TIFF stacks only): `dic_channel`, `tiff_axes`.
 - `if_already_processed` — what a step does with images it already processed with *other* settings:
   `"ask"` (default: lists what changed and asks once), `"skip"` or `"overwrite"`. Images already
   processed with the same settings are always skipped. Re-running segmentation moves the image's
@@ -82,25 +99,29 @@ config (see `config_files/…/config…json`). The key fields:
   `model` is `"DIC_DAPI_only"` (DIC + DAPI; any strain, incl. she2/she3) or
   `"with_ASH1CLB2"` (also uses the ASH1/CLB2 channel; best for small buds; not for
   she2/she3 mutants). Leave the block out or set `"enabled": false` to annotate buds by hand.
+- `cell_cycle`, `experiments` — see the comments in `config_example.json`. `cell_flags` (the napari flags for
+  high-ASH1/CLB2 cells) has settings too, but they are not meant to be tuned: the block is not in the example and
+  only written when it was changed (defaults in `buddy/config.py`, `CELL_FLAG_DEFAULTS`).
+
+A config of buddy 0.5 or older (one `"parameters"` block for everything) is still read; `buddy.config.write_config`
+saves it in the new layout.
 
 You can hand-edit the JSON, or build one in napari: **Plugins → napari-buddy →
-Create config file**, fill in the channels and parameters (including the segmentation, GPU,
-bud classification and re-run settings below), and save.
+Create config file** (tabs *General* and *Omnipose*), fill in the channels and settings, and save.
 
 > **Common gotcha:** if the log says *"ignoring unknown channel token '…'"* during
 > reading, a channel's `filter` in the config doesn't match the filter name the
 > microscope wrote into the `.vsi` scene. Fix the `filter` string to match
 > exactly (case- and spelling-sensitive).
 
-there is also `config_test.json` in parent folder.
-
 ### 2.2 Point the notebook at your data
 
-Open `01_fish_bulk_processing.ipynb` (this is the main pipeline notebook). In the
-first configuration cell, set the config path and the input/output folders:
+Open `01_fish_bulk_processing.ipynb` (this is the main pipeline notebook). Its first cell sets `ROOT`, the folder
+above the two repositories (section 1.1), and the data cell builds every path from it; for your own data, change
+`DATA` and `CFG_FILE` there:
 
 ```python
-exp = Experiment.from_cfg_file(r"..\buddy\config_files\220601\config…json")
+exp = Experiment.from_cfg_file(ROOT / "buddy/config_files/config_example.json")
 exp.inputdir  = r"…\your data\STRAIN BRn"
 exp.outputdir = r"…\your data\STRAIN BRn\output"
 exp.create_image_list()
@@ -200,16 +221,15 @@ rewriting the per-cell `{channel}.csv` tables (now with mother/bud compartments)
 
 ## Part 5 — Troubleshooting quick reference
 
+Installation problems (Java, GPU, Omnipose, bud-model weights, launching napari / Jupyter): [INSTALL.md](INSTALL.md) → Troubleshooting.
+
 | Symptom | Likely cause / fix |
 |---|---|
-| `numpy` / `_ssl` DLL errors on launch | You launched bare `napari`/`jupyter`. Use `python -m napari` / `python -m notebook` inside the `buddy` env. |
+| *CUDA out of memory* in step 2 | The GPU is too small for a whole image: set `"tile": true` in the `"segmentation"` block of the config (or `"use_gpu": false`). The error message says so too. |
+| A step stops with `StepError: step N (…) of image X failed in buddy/…py` | The message names the step, the image, the file and function in buddy and, when known, what to do; `buddy.where("segment")` prints where each step lives. |
 | "ignoring unknown channel token '…'" | A channel `filter` in the config doesn't match the `.vsi` scene name — fix the string exactly. |
-| First `.vsi` read hangs / "Fetching zulu-jre" | Java is being downloaded on first use. Let it finish (needs internet once), or provide `openjdk=11`/`maven` via conda. |
 | Buds disappear before you can annotate | The DAPI-presence filter drops cells with no nucleus of their own. Paint the missing bud in the `bud masks` layer and link it with the Reassign-buds widget. |
 | `assign_spots` can't find corrected masks | Stage 4's save button (and the DAPI copy in Stage 3) must have run — they create the `corrected/` masks that assignment reads. |
-| "no CUDA GPU is available to PyTorch" | The CPU-only PyTorch is installed. See INSTALL.md → GPU, or ignore (runs on CPU). |
-| "Could not find or download bud_model_….pt" | No internet on first use: download the weights from the GitHub release and put them in `buddy/models/` (INSTALL.md). |
-| Omnipose won't install | Check Python is 3.9/3.10 (not 3.11+). On Apple Silicon see *Troubleshooting* in [INSTALL.md](INSTALL.md). |
 
 ---
 

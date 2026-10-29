@@ -4,12 +4,12 @@ fluorescence channels (z-stacks), e.g. exported from Fiji or written by another 
 
 File naming, as for .vsi: <stem>.tif (or .ome.tif) with the channels, and <stem>_DIC.tif (or <stem with _DIC before
 the sequence number>.tif) with the 2D DIC image next to it. The DIC image may also be a channel of the stack
-(name "DIC", or "dic_channel" in the config's "parameters"); then the middle z plane is used.
+(name "DIC", or "dic_channel" in the config's "tiff_input" block); then the middle z plane is used.
 
 Which channel is which mRNA: the channel names in the file (OME: Channel Name; ImageJ: the "Labels" or "channel
 names" the writer stored) are matched against the config's "channels": the "filter" name, the channel key or the
 "mrna" name. Files without channel names need "tiff_channel": <index> in every "channels" entry of the config.
-Axis order comes from the file's metadata; files without it need "tiff_axes" (e.g. "ZCYX") in "parameters".
+Axis order comes from the file's metadata; files without it need "tiff_axes" (e.g. "ZCYX") in "tiff_input".
 Pixel size and z step are taken from the config ("scale"), as for .vsi files.
 
     from buddy.reading.tiff_input import is_stack, read_stack

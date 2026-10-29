@@ -29,7 +29,7 @@ Two models (choose in the config file, "bud_classification" -> "model"):
 Both were trained with late-M cells (bud with its own full-size nucleus) included, so those are paired too.
 The weights (bud-models) download automatically on first use; models/<name>.json describes each model.
 
-Typical use (the bulk-processing notebook does this for you via Image.classify_buds):
+Typical use (the bulk-processing notebook does this for you via pipeline.classify_buds):
     model = BudModel.load("with_ASH1CLB2", use_gpu=True)
     result = model.classify(dic, dapi, cell_masks, ash1clb2_maxproj)
     result["cell_masks"], result["bud_masks"], result["pairs"], result["flags"]
@@ -126,16 +126,16 @@ def pick_device(use_gpu=True):
 # ---------------------------------------------------------------------------------------------
 def build_network(n_input_channels, pretrained_encoder=False):
     """U-Net (ResNet-34 encoder): 2 maps (bud of this cell, this cell) + a 3-class output. Input is enlarged 2x first."""
-    import segmentation_models_pytorch as smp
     import torch.nn as nn
     import torch.nn.functional as F
+
+    from buddy.buds.unet import Unet
 
     class BudNet(nn.Module):
         def __init__(self):
             super().__init__()
-            self.net = smp.Unet("resnet34", encoder_weights="imagenet" if pretrained_encoder else None,
-                                in_channels=n_input_channels, classes=2,
-                                aux_params=dict(classes=len(CLASSES), dropout=0.2))
+            self.net = Unet(in_channels=n_input_channels, classes=2, aux_classes=len(CLASSES), dropout=0.2,
+                            pretrained_encoder=pretrained_encoder)
 
         def forward(self, x):                                  # x: (batch, channels, crop, crop)
             x = F.interpolate(x, scale_factor=2, mode="bilinear", align_corners=False)

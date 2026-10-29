@@ -1,40 +1,65 @@
 # Installing buddy
 
+This is the only place where installation is described; the README, the tutorial and napari-buddy point here.
+You need [Miniconda or Anaconda](https://docs.conda.io/en/latest/miniconda.html) and Git. The installer makes a
+conda environment called `buddy` with Python 3.12 and everything in it (buddy, napari + the napari-buddy plugin,
+Jupyter, Java for reading `.vsi` files); internet is needed once; an NVIDIA GPU is optional.
+
+Every package version is pinned in `constraints/<platform>.txt` (the versions buddy is tested with), and the
+installers pass that file to pip, so an install on another machine gets the same packages as ours.
+
 ## Quick install (recommended)
 
-From the `buddy` repo root:
+Put the two repositories side by side (`<folder>/buddy` and `<folder>/napari-buddy`; the zip from Zenodo is
+already laid out like this), then run **from the `buddy` repo root**:
 
-**Windows (Anaconda Prompt):**
+**Windows** (Anaconda Prompt):
 ```
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
-**macOS / Linux (Terminal):**
+**macOS** (Terminal):
 ```
 bash install.sh
 ```
 
-The script creates a `buddy` conda environment (Python 3.10), installs
-buddy with all its dependencies (including the napari viewer and Jupyter),
-adds the `bioio-ome-tiff` writer plugin, installs the `napari-buddy` plugin
-if it sits next to this repo, and runs a quick import check.
+**Linux** (Terminal):
+```
+bash install.sh
+```
+On Linux the installer picks the CPU build of PyTorch when no NVIDIA GPU is found (the default download is the
+2.5 GB CUDA build), uses `~/.cache` as temporary space (`/tmp` is too small on some machines) and installs napari
+with Qt5 (`napari[pyqt5]`; Qt6 does not start on every Linux desktop).
 
-This prompt command should install all necessary dependencies. If necessary, steps below are detailed to install individual components.
+The scripts do, in this order: create the environment (Python 3.12, Java 11) · `pip install -c
+constraints/<platform>.txt -e ".[test,napari,notebooks]"` · `pip install --no-deps omnipose` (see
+"Omnipose" below) · `pip install -e ../napari-buddy` · Windows with an NVIDIA GPU: swap in the CUDA build of PyTorch
+· an import check and `java -version`.
+
+On every platform the script removes an existing `buddy` environment first, so it can simply be run again after a
+failed attempt. Options: `-CPU` (Windows) or `cpu` as third argument (macOS / Linux) to skip the GPU build of
+PyTorch; the first argument is the path to napari-buddy (default `../napari-buddy`), the second the environment
+name. The script ends with an import check and `java -version`.
 
 ## GPU (recommended)
 
-Omnipose and the bud model run much faster on an NVIDIA GPU. pip installs the **CPU-only** PyTorch
-by default; the install scripts replace it with the CUDA version when `nvidia-smi` is found
-(skip with `-CPU` on Windows / `cpu` as third argument on macOS/Linux). To do it by hand:
+Omnipose, the bud model and spot detection run much faster on an NVIDIA GPU. PyTorch is pinned to 2.5.1.
+- **Linux:** the normal PyPI wheel of torch 2.5.1 is the CUDA 12.4 build and brings its CUDA libraries along
+  (`nvidia-*-cu12` packages); it works with any NVIDIA driver from 525 on. Nothing to swap. Without a GPU the
+  installer takes the much smaller CPU wheel instead.
+- **Windows:** the PyPI wheel is CPU-only; the installer swaps in the self-contained CUDA 12.1 build when
+  `nvidia-smi` is found (skip with `-CPU`). By hand:
+  ```
+  conda activate buddy
+  python -m pip install --force-reinstall --no-deps --no-cache-dir --timeout 120 --retries 10 "torch==2.5.1" "torchvision==0.20.1" --index-url https://download.pytorch.org/whl/cu121
+  python -c "import torch; print('GPU available:', torch.cuda.is_available())"
+  ```
+- **macOS:** CPU only.
 
-```
-conda activate buddy
-python -m pip install --force-reinstall --no-deps --no-cache-dir --timeout 120 --retries 10 "torch==2.5.1" "torchvision==0.20.1" --index-url https://download.pytorch.org/whl/cu121
-python -m pip install "numpy<2"
-python -c "import torch; print('GPU available:', torch.cuda.is_available())"
-```
+Do not mix: a CUDA build from the PyTorch index installed with `--no-deps` on **Linux** lacks its `nvidia-*`
+libraries and will not import. On Linux, use the PyPI wheel.
 
-Then set `"use_gpu": true` in the `"parameters"` block of your config file (the default). Without a
+Then set `"use_gpu": true` in the `"hardware"` block of your config file (the default). Without a
 GPU everything still runs, on the CPU.
 
 With a GPU, the background filter, spot detection and the denoising step of spot decomposition also run on it (`"gpu_spot_detection": true`, the
@@ -53,75 +78,83 @@ Offline? Download them from the GitHub release page of this repository (assets o
 ## Manual install
 
 ```
-conda create --name buddy python=3.10
+conda create --name buddy python=3.12
 conda activate buddy
-python -m pip install -e ".[test,napari,notebooks]"   # buddy + deps + pytest + napari + jupyter
-python -m pip install bioio-ome-tiff                   # OME-TIFF writer (see note below)
-# optional, NVIDIA GPU: see "GPU" above for the CUDA version of PyTorch
-python -m pip install -e ../napari-buddy               # the napari plugin (adjust the path)
+python -m pip install -c constraints/windows.txt -e ".[test,napari,notebooks]"   # buddy + deps + pytest + napari + jupyter
+python -m pip install --no-deps omnipose==1.1.4                                  # see "Omnipose" below
+# Windows with an NVIDIA GPU: see "GPU" above for the CUDA version of PyTorch
+python -m pip install -c constraints/windows.txt -e ../napari-buddy              # the napari plugin (adjust the path)
 ```
+(`constraints/linux.txt` or `constraints/macos.txt` on those platforms.) Leaving out `-c` works too, but then pip
+takes the newest version of every package, and new releases of Big-FISH, scikit-image or Omnipose change the
+results or break the install.
 
-Python **must** be 3.9 or 3.10 — omnipose does not work on 3.11+.
+Python 3.10, 3.11 or 3.12 (3.12 is what the installers use and the constraints are made for; 3.13 has no PyTorch 2.5.1).
 Use `python -m pip` so installs land in the active env, not base conda.
 
 ## Test it
 
 ```
 conda activate buddy
-pytest -m "not slow"   # fast tests (~1 min); pytest -m slow: Omnipose + bud model
+pytest -m "not slow"   # fast tests (~1 min); pytest -m slow: Omnipose, bud model, one real .vsi
 python -m napari      # Plugins -> buddy   (never bare 'napari')
 python -m notebook    # run the analysis notebooks (in notebooks/)
 ```
 
-The tests download a small test field on first use (release `test-data-v1`) and should finish with no errors.
+The tests download a small test field on first use (release `test-data-v3`, 70 MB; the slow `.vsi` test also `test-data-vsi`, 400 MB) and should finish with no errors. For a private repository the download goes through the GitHub CLI (`gh auth login` once).
 
 ## Good to know
 
-- **bioio OME-TIFF writer.** bioio 3.x split its writers into separate
-  packages, so `OmeTiffWriter` now lives in `bioio-ome-tiff`, and
-  `buddy/reading/readers.py` imports it as
-  `from bioio_ome_tiff.writers import OmeTiffWriter`. The installers pull
-  this in automatically; if you install by hand, run
-  `pip install bioio-ome-tiff`.
+- **Omnipose.** `pip install omnipose` pulls in about a hundred packages (aicsimageio, networkit, dask-image, ...)
+  of which segmentation uses a dozen. buddy therefore lists those dozen itself in `pyproject.toml` and installs
+  `omnipose` with `--no-deps`. The omnipose wheel includes its own copy of `cellpose_omni`; the separate
+  `cellpose-omni` package on PyPI (0.9.1) is older and, installed next to it, overwrites that copy - Omnipose then
+  silently runs as plain Cellpose (`>>cyto<< model set to be used` in the log, 0 cells, a `niter` error on the
+  nuclei). Never install it; `pip uninstall cellpose-omni` + `pip install --force-reinstall --no-deps
+  omnipose==1.1.4` repairs an environment that has it. `buddy.segmentation.masks.check_omnipose()` (run by the
+  installers) checks that the real Omnipose is in place. (One of the unused packages, `aicsimageio`, is imported by
+  `cellpose_omni.io` at import time without being needed; `masks.py` registers an empty stand-in for it.) (Omnipose's own GUI, `omnipose` on the command line, needs its `gui` extra: `pip install
+  "omnipose[gui]"`.)
+- **Updating the pinned versions.** After changing `pyproject.toml`, regenerate the three constraint files (the
+  command is in their first lines; `pip install uv` gives the `uv` tool), run the tests, commit. Only change
+  `torch==` / `torchvision==` together with the CUDA index URLs in the installers.
 - **Launch with `python -m`.** Always use `python -m napari` and
   `python -m notebook`, never bare `napari` / `jupyter`. The bare commands
   can bounce to a broken base-conda copy that happens to be first on your
   PATH (the cause of the numpy/`_ssl` DLL errors).
-- **Java for `.vsi` files.** Reading Olympus `.vsi` files needs Java and Maven (Bio-Formats). The installers and
-  `environment.yml` put both in the environment (`openjdk=11`, `maven` from conda-forge, on Windows, macOS and Linux);
-  activating the environment sets `JAVA_HOME`. The first `.vsi` read still takes a moment (Bio-Formats is fetched
-  once with Maven).
+- **Java for `.vsi` files.** Reading Olympus `.vsi` files goes through Bio-Formats (Java). Bio-Formats itself is a
+  pip package (`bioformats_jar`, the 6.7.0 jar + JPype), so nothing is downloaded on first use; Java comes from
+  conda-forge (`openjdk=11`, put in the environment by the installers; activating the environment sets `JAVA_HOME`).
+  Another Java works too: JPype finds it through `JAVA_HOME`.
 - **Updating the code.** buddy is installed in editable mode (`pip install -e`), so the environment
   uses the code in this folder directly. After pulling or editing code, restart the Jupyter kernel;
   no reinstall needed (only when `pyproject.toml` gets new dependencies).
 - **No GPU?** Nothing to do: buddy falls back to the CPU (or set `"use_gpu": false` in the config).
-- **Apple Silicon + omnipose.** If the omnipose step fails to build,
-  comment `omnipose` out of `pyproject.toml`, reinstall, then:
-  ```
-  pip install git+https://github.com/kevinjohncutler/omnipose.git
-  pip install git+https://github.com/kevinjohncutler/cellpose-omni.git
-  ```
+- **Apple Silicon + Omnipose.** If `mahotas` or `edt` fail to build (no wheel for your Python), install the
+  Xcode command-line tools (`xcode-select --install`) and run the installer again; if Omnipose itself fails, see
+  Troubleshooting.
 
 ## Troubleshooting
 
-- **Omnipose on macOS.** If the install fails, install Omnipose from source in a conda env with python<=3.10.11
-  (see [this issue](https://github.com/kevinjohncutler/omnipose/issues/14)): add `jupyterlab` to
-  `omnipose_mac_environment.yml` from the [Omnipose](https://omnipose.readthedocs.io/installation.html) repository, then
+- **Omnipose on macOS.** If the Omnipose step fails, install it from source
+  (see [this issue](https://github.com/kevinjohncutler/omnipose/issues/14)):
   ```
-  conda env create --name buddy --file omnipose_mac_environment.yml
   conda activate buddy
-  pip install git+https://github.com/kevinjohncutler/omnipose.git
-  pip install git+https://github.com/kevinjohncutler/cellpose-omni.git
+  pip install --no-deps git+https://github.com/kevinjohncutler/omnipose.git
   ```
+- **`import torch` fails on Linux with a missing `libcudnn` / `libcublas`:** a CUDA build from the PyTorch index
+  was installed with `--no-deps` (older installers did this). `pip install --force-reinstall "torch==2.5.1"
+  "torchvision==0.20.1"` from PyPI brings the libraries along.
 - **Java not found when reading `.vsi` files** (e.g. an environment made by hand, or with an older installer):
-  `conda install -c conda-forge openjdk=11 maven`, then deactivate and reactivate the environment. Check with
+  `conda install -c conda-forge openjdk=11`, then deactivate and reactivate the environment. Check with
   `java -version`. If it is still not found, set `JAVA_HOME` once: `conda env config vars set JAVA_HOME=%CONDA_PREFIX%\Library`
   (Windows) or `conda env config vars set JAVA_HOME=$CONDA_PREFIX/lib/jvm` (macOS / Linux), and reactivate.
-- **"Bio-Formats does not support this image" for a `.vsi` file that Fiji opens** (underlying error:
-  `java package 'loci' has no attribute 'common'`): Java runs, but the Bio-Formats files that Maven downloads on
-  first use are missing or incomplete (download blocked or interrupted). Check Maven (`mvn -v`), remove the broken
-  download and read a file again with internet access: Windows `rmdir /s /q "%USERPROFILE%\.jgo"`, macOS / Linux
-  `rm -rf ~/.jgo`. Without internet: copy the folders `.jgo` and `.m2/repository/ome` from your home folder on a
-  computer where it works to the same place. To see the real error behind the message:
-  `python -c "from bioio_bioformats import Reader; print(Reader(r'path/to/file.vsi').scenes)"`.
+- **A `.vsi` file does not read** (buddy <= 0.5.1 said "Bio-Formats does not support this image" when the
+  Bio-Formats download of the first read had failed; since 0.5.2 Bio-Formats is installed with buddy and there is
+  no download). To see what Bio-Formats makes of a file:
+  `python -c "from buddy.reading.vsi import BioFormatsFile; f = BioFormatsFile(r'path/to/file.vsi'); print(f.series_names, f.shape(0))"`.
+  Another Bio-Formats version can be tried without reinstalling: set `BIOFORMATS_JAR` to the path of a
+  `bioformats_package.jar` (from downloads.openmicroscopy.org) before starting Python.
+- **CUDA out of memory in step 2** (small GPU, e.g. 4 GB): set `"segmentation": {"tile": true}` in the config file
+  (Omnipose on tiles) or `"use_gpu": false`; the error message says so too. See TUTORIAL.md, section 2.1.
 - **Omnipose GUI** (optional, handy for finding segmentation settings): run `omnipose` from the command line.

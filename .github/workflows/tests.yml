@@ -1,5 +1,5 @@
 # Runs the fast tests (unit tests + the regression test from saved Omnipose masks) on every push and pull
-# request, on Linux and Windows. The slow tests (Omnipose, bud model) run on your own machine: `pytest -m slow`.
+# request, on Linux and Windows (Java for the Bio-Formats test is preinstalled on the runners). The slow tests (Omnipose, bud model) run on your own machine: `pytest -m slow`.
 name: tests
 
 on:
@@ -14,17 +14,21 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            constraints: constraints/linux.txt
+          - os: windows-latest
+            constraints: constraints/windows.txt
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: "3.12"
           cache: pip
-      - name: Install PyTorch (CPU build, much smaller than the default CUDA build)
-        run: pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-      - name: Install buddy
-        run: pip install -e ".[test]"
+      - name: Install PyTorch (CPU build, much smaller than the default CUDA build; version from the constraints)
+        run: pip install -c ${{ matrix.constraints }} torch torchvision --index-url https://download.pytorch.org/whl/cpu
+      - name: Install buddy (the pinned versions of constraints/, as the installers do; Omnipose is not needed here)
+        run: pip install -c ${{ matrix.constraints }} -e ".[test]"
       - name: Lint (ruff)
         run: ruff check buddy tests
       - name: Download the test data (with the workflow's token, so a private repository works too)
@@ -32,7 +36,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release download test-data-v2 --pattern field_A.zip --dir "$RUNNER_TEMP" --clobber
+          gh release download test-data-v3 --pattern field_A.zip --dir "$RUNNER_TEMP" --clobber
           rm -rf tests/data && mkdir -p tests/data
           python -c "import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall('tests/data')" "$RUNNER_TEMP/field_A.zip"
           echo "test data:"; ls -l "$RUNNER_TEMP/field_A.zip"; find tests/data/field_A/reference -type d

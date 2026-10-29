@@ -2,17 +2,17 @@ name: buddy
 channels:
   - conda-forge
 dependencies:
-  - python=3.10
+  - python=3.12
   - pip
   # Everything else (buddy + its deps, including omnipose and big-fish)
   # is installed by pip from pyproject.toml. Run from the repo root:
   #   conda env create -f environment.yml
   #   conda activate buddy
-  # then install the code:
-  #   pip install -e ".[test,napari]"
+  # then install the code (versions pinned in constraints/<platform>.txt, Omnipose without its dependency list;
+  # INSTALL.md explains both):
+  #   pip install -c constraints/windows.txt -e ".[test,napari,notebooks]"
+  #   pip install --no-deps omnipose==1.1.4
+  # The installers (install.ps1 / install.sh) do all of this.
   #
-  # Java + Maven for reading .vsi files (Bio-Formats). From conda-forge, so
-  # nothing is downloaded on the first read (that download fails offline or
-  # behind a proxy). Activating the env sets JAVA_HOME.
+  # Java for reading .vsi files (Bio-Formats, which pip installs as bioformats_jar). Activating the env sets JAVA_HOME.
   - openjdk=11
-  - maven

@@ -29,37 +29,46 @@ The module expects a directory containing the following files:
   stacks (OME-TIFF or Fiji/ImageJ hyperstacks with the channels as z-stacks, e.g. `image_01.ome.tif`). The
   channel names in the file are matched to the `"filter"` names in the config; a file without channel names
   needs `"tiff_channel": <index>` in each `"channels"` entry, a file without axis information `"tiff_axes"`
-  (e.g. `"ZCYX"`) in `"parameters"`.
+  (e.g. `"ZCYX"`) in the `"tiff_input"` block of the config.
 - Cell outlines: 2D .tif files (e.g. DIC images), named `<image>_DIC.tif`; for TIFF stacks the DIC image may
   also be a channel of the stack named `DIC` (its middle z plane is used)
-- Configuration: a json file containing channel and processing parameters (all settings are explained in
-  [TUTORIAL.md](TUTORIAL.md), section 2.1; or build one in napari: Plugins → napari-buddy → Create config file).
+- Configuration: a json file containing channel and processing parameters: start from `config_files/config_example.json`
+  (every setting written out; explained in [TUTORIAL.md](TUTORIAL.md), section 2.1), or build one in napari:
+  Plugins → napari-buddy → Create config file.
 
 # Download code and example data
-Go to https://doi.org/10.5281/zenodo.22900927 to download napari, napari-buddy and some test data. 
+Go to https://doi.org/10.5281/zenodo.22900927 to download buddy, napari-buddy and some test data.
 The folder structure of the zipped file should allow you to directly start with the tutorial after installation.
 Note: newer versions of the code can be downloaded by cloning this repo.
 
 # Installation
 
-From the **`buddy` repo root**:
+One command per operating system, from the `buddy` repo root; everything about installing (GPU, Linux and macOS
+notes, manual install, troubleshooting) is in **[INSTALL.md](INSTALL.md)** and nowhere else.
 
-**Windows (Anaconda Prompt):**
-```
-powershell -ExecutionPolicy Bypass -File install.ps1
-```
+# Where things are
 
-**macOS / Linux (Terminal):**
-```
-bash install.sh
-```
-This will install buddy and all its dependencies. If an NVIDIA GPU is found, the GPU version of
-PyTorch is installed too, so Omnipose and the bud model run on the GPU (add `-CPU` on Windows, or
-`cpu` as third argument on macOS/Linux, to skip that). The bud-model weights download automatically
-the first time they are used.
+One step = one function in `buddy/pipeline.py`, written out as a few named sub-steps; each sub-step reads one block
+of the config file and writes one or two files of the image folder. `python -c "import buddy; buddy.where()"`
+prints this table (or `buddy.where("segment")` for one step); errors inside a step say the step, the image, the
+file and function in buddy, and what to do when the cause is known.
 
-Full list of dependencies: `pyproject.toml`. GPU set-up, manual install and troubleshooting (macOS, Java):
-[INSTALL.md](INSTALL.md).
+| step | function in `pipeline.py` | the work is done in | config block | writes |
+|---|---|---|---|---|
+| 1 read | `read_image` | `reading/readers.py`, `reading/vsi.py` (.vsi, Bio-Formats), `reading/tiff_input.py` | `channels` (`tiff_input` for TIFF stacks) | `{channel}.tif`, `DIC.tif`, `projections/` |
+| 2 segment | `segment_cells`, `segment_nuclei` | `segmentation/masks.py` (Omnipose) | `segmentation` (organism, models, tile, min sizes, cells / nuclei) | `DIC_masks.tif`, `DAPI_masks.tif` |
+|  | `clean_up_masks` | `segmentation/cleanup.py` | `segmentation` (min_cell_area, expand_px, remove_edge_cells) | `DIC_masks_pp.tif`, `DAPI_masks.tif` |
+| 3 spots | `find_focus`, `filter_background`, `detect_spots`, `decompose_spots` | `spots/detection.py` (Big-FISH; `spots/gpu_detection.py` on the GPU) | `spots` (scale, spot_radius, sigma, patch_size, decomposition), `channels` (threshold), `hardware` | `{channel}_spots.npy`, `_filtered.tif`, `_decomposed_spots.npy`, `_dense_regions.npy` |
+|  | `align_masks` | `spots/alignment.py` | - | `aligned_DIC.tif`, `aligned_DIC_masks.tif`, `corrected/` masks |
+|  | `classify_buds` | `buds/bud_model.py`, `buds/unet.py` | `bud_classification` | `corrected/bud_corrected_masks.tif`, `bud_flags.csv`, `bud_pairs.csv` |
+|  | `count_spots`, `flag_cells`, `assign_cell_cycle` | `quantification/spot_assignment.py`, `cell_flags.py`, `cell_cycle.py` | `cell_flags`, `cell_cycle` | `{channel}.csv`, `cell_flags.csv`, `cell_cycle.csv` |
+| 4 check | - | napari-buddy (Correct images, Buds) | - | `corrected/` masks |
+| 5 recount | `count_spots`, `flag_cells`, `assign_cell_cycle` | as in step 3 | as in step 3 | `{channel}.csv`, `cell_flags.csv`, `cell_cycle.csv` |
+
+The config file has one block per step (`config_files/config_example.json` shows every setting with its default and
+a comment per block). Everything else: `config.py` (defaults, checks, the readable writer), `experiment.py` (the config + the loaded models),
+`image.py` (one image's files, arrays and `img.json`), `paths.py` (file names), `which_images.py` (which images a
+step still has to do), `parallel.py` (several images at once).
 
 # Typical workflow
 1. Batch process inputs to TIF files: `notebooks/01_fish_bulk_processing.ipynb`
@@ -97,9 +106,8 @@ Switch it on in the config file:
 | `"DIC_DAPI_only"` | DIC + DAPI | every strain, including she2/she3 mutants |
 | `"with_ASH1CLB2"` | DIC + DAPI + ASH1/CLB2 smFISH | strains with normal ASH1 mRNA transport (not she2/she3): fewer false pairs, best overall |
 
-Tested on 198 hand-annotated cells from images the models never saw, the models assign buds to the right mother
-with a pairing F1 of 0.82 (`with_ASH1CLB2`) and 0.80 (`DIC_DAPI_only`); large buds remain the weakest class, so always
-check the flagged cells in napari.
+On a whole imaging day the models had never seen, they assign buds to the right mother with a pairing F1 of 0.80
+(`with_ASH1CLB2`) and 0.75 (`DIC_DAPI_only`); large buds remain the weakest class, so always check the flagged cells in napari.
 
 All settings, the flags in napari and the output files: [BUD_MODEL.md](BUD_MODEL.md). How the models were trained
 and evaluated: [methods.md](methods.md). Train your own model: `notebooks/05_train_bud_model.ipynb`.

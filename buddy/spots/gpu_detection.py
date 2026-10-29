@@ -13,7 +13,7 @@ The final steps (threshold, removing duplicate detections) are Big-FISH's own fu
 
 Tested against Big-FISH on two images (YET915 BR5 _02, three channels; 220601 yET563 BR1 _02 SRL1 at three
 fixed thresholds and the automatic threshold): identical spots; filtered values differ by at most 1 grey level in ~0.01% of pixels (rounding).
-On a CPU, Big-FISH itself is faster, so buddy only uses these functions on a GPU (see Image._run_on_gpu_or_cpu).
+On a CPU, Big-FISH itself is faster, so buddy only uses these functions on a GPU (spots/detection.py, run_on_gpu_or_cpu).
 Switch off with "gpu_spot_detection": false in the parameters block of the config file.
 """
 import numpy as np

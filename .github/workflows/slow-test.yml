@@ -1,0 +1,42 @@
+# The slow tests once a week (and on demand): Omnipose and the bud model on the CPU, and the one real .vsi
+# (release test-data-vsi, 400 MB). The fast tests run on every push (tests.yml); this catches what they cannot:
+# a drifting package that changes the masks or the spots, Bio-Formats on a real Olympus file.
+name: slow tests
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"          # Mondays 06:00 UTC
+  workflow_dispatch:
+
+jobs:
+  slow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install PyTorch (CPU build; version from the constraints)
+        run: pip install -c constraints/linux.txt torch torchvision --index-url https://download.pytorch.org/whl/cpu
+      - name: Install buddy and Omnipose (the pinned versions, as the installers do)
+        run: |
+          pip install -c constraints/linux.txt -e ".[test]"
+          pip install --no-deps "$(grep -E '^omnipose==' constraints/linux.txt)"
+          python -c "from buddy.segmentation import masks; masks.check_omnipose(); print('Omnipose OK')"
+      - name: Download the test data (test field + the real .vsi) with the workflow's token
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download test-data-v3 --pattern field_A.zip --dir "$RUNNER_TEMP" --clobber
+          gh release download test-data-vsi --pattern vsi.zip --dir "$RUNNER_TEMP" --clobber
+          rm -rf tests/data && mkdir -p tests/data
+          python -c "import sys, zipfile; [zipfile.ZipFile(f).extractall('tests/data') for f in sys.argv[1:]]" "$RUNNER_TEMP/field_A.zip" "$RUNNER_TEMP/vsi.zip"
+          ls tests/data tests/data/vsi
+      - name: Slow tests (Omnipose, bud model, .vsi)
+        env:
+          BUDDY_REQUIRE_TEST_DATA: "1"
+          BUDDY_TEST_NO_DOWNLOAD: "1"
+        run: pytest -m slow --durations=10 -v

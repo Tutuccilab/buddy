@@ -19,31 +19,52 @@ log = logging.getLogger("buddy")
 def read_vsi(path, filter2mRNA):
     """
     The fluorescence channels of an Olympus .vsi file: {mrna: ZYX array} for every channel whose filter name
-    (from the scene name, e.g. "CY5, CY3.5 NAR, CY3, DAPI") is a "filter" of the config.
+    (from the series name, e.g. "001 CY5, CY3.5 NAR, CY3, DAPI") is a "filter" of the config.
+    Read with buddy's own Bio-Formats reader (buddy/reading/vsi.py); BUDDY_VSI_READER=bioio uses bioio instead
+    (buddy <= 0.5.1) when it is installed, for comparing the two.
     """
+    import os
+    if os.environ.get("BUDDY_VSI_READER") == "bioio":
+        return _read_vsi_bioio(path, filter2mRNA)
+    from buddy.reading.vsi import BioFormatsFile
+    log.info(f"reading fluorescence image: {path}")
+    channels = {}
+    with BioFormatsFile(path) as f:
+        log.info(f"..found series: {f.series_names}")
+        for series, name in enumerate(f.series_names):
+            if name == "macro image":
+                log.info(f"....ignoring series '{name}'")
+                continue
+            log.info(f"....reading series '{name}' (T, C, Z, Y, X = {f.shape(series)})")
+            for c, token in enumerate(_channel_tokens(name)):
+                if token in filter2mRNA:
+                    mrna = filter2mRNA[token]
+                    log.info(f"......reading in channel: C={c} filter={token} mrna={mrna}")
+                    channels[mrna] = f.read(series, c)
+                else:
+                    log.warning(f"......ignoring unknown channel token '{token}' (not a 'filter' in the config)")
+    return channels
+
+
+def _channel_tokens(series_name):
+    """'001 CY5, CY3.5 NAR, CY3, DAPI' -> ['CY5', 'CY3.5 NAR', 'CY3', 'DAPI'] (the filter names, in channel order)."""
+    return [t.strip() for t in series_name.replace("001 ", "").split(",")]
+
+
+def _read_vsi_bioio(path, filter2mRNA):
     import bioio_bioformats
     from bioio import BioImage  # heavy import (starts the Bio-Formats Java bridge)
-    log.info(f"reading fluorescence image: {path}")
+    log.info(f"reading fluorescence image with bioio: {path}")
     image = BioImage(Path(path), reader=bioio_bioformats.Reader)
     log.info(f"..found scenes: {image.scenes}")
     channels = {}
     for scene in image.scenes:
         if scene == "macro image":
-            log.info(f"....ignoring scene '{scene}'")
             continue
         image.set_scene(scene)
-        log.info(f"....reading scene '{scene}' (shape {image.shape})")
-        log.info(f"....found channels {image.channel_names}")
-        tokens = [t.strip() for t in scene.replace("001 ", "").split(",")]
-        log.info(f"....channel tokens from scene name: {tokens}")
-        log.info(f"....configured filters: {list(filter2mRNA)}")
-        for c, token in enumerate(tokens):
+        for c, token in enumerate(_channel_tokens(scene)):
             if token in filter2mRNA:
-                mrna = filter2mRNA[token]
-                log.info(f"......reading in channel: C={c} filter={token} mrna={mrna}")
-                channels[mrna] = image.get_image_data("ZYX", C=c)
-            else:
-                log.warning(f"......ignoring unknown channel token '{token}' (not a 'filter' in the config)")
+                channels[filter2mRNA[token]] = image.get_image_data("ZYX", C=c)
     return channels
 
 
@@ -82,12 +103,14 @@ def save_projection(stack_file, stack):
 
 def save_channel_stacks(folder, channels, dic):
     """{mrna: ZYX array} -> <folder>/<mrna>.tif (OME-TIFF) + projections, the DIC image -> <folder>/DIC.tif."""
-    from bioio_ome_tiff.writers import OmeTiffWriter
+    import tifffile
     files = ImageFiles(folder)
     log.info(f"saving layers to: {folder}")
     for mrna, data in channels.items():
         path = files.channel_stack(mrna)
-        OmeTiffWriter.save(data, path, dim_order="ZYX", channel_names=[mrna])
+        # OME-TIFF (axes ZYX, one channel named after the mRNA), zlib-compressed like the bioio writer used before 0.5.1
+        tifffile.imwrite(path, np.asarray(data), ome=True, compression="zlib",
+                         metadata={"axes": "ZYX", "Channel": {"Name": [mrna]}})
         save_projection(path, data)
         log.info(f"..saving {mrna} channel to {path}")
     io.imsave(files.dic, dic, check_contrast=False)

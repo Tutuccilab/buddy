@@ -4,7 +4,7 @@ import json
 import pytest
 
 from buddy.experiment import BUD_CLASSIFICATION_DEFAULTS, CELL_FLAG_DEFAULTS, Experiment
-from buddy.rerun_check import select_images, step_settings
+from buddy.which_images import select_images, step_settings
 
 MINIMAL = {
     "inputdir": "in", "outputdir": "out",

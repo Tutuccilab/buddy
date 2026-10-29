@@ -1,5 +1,129 @@
 # Changelog
 
+## 0.6.0 (2026-10-29)
+**The config file has one block per pipeline step.** `"parameters"` held spot detection, segmentation, clean-up,
+GPU and TIFF settings together, and the Omnipose settings were split between it and `"segmentation"`. Now:
+`channels` (step 1), `spots` (step 3: scale, spot_radius, sigma, patch_size, decomposition), `segmentation` (step 2:
+organism, models, tile, min sizes, use_preset, cells / nuclei, clean-up), `bud_classification`, `cell_cycle`, then
+the rarely changed `hardware` (use_gpu, gpu_spot_detection), `tiff_input` (step 1, TIFF stacks) and `experiments`.
+Each step reads one block (`buddy.where()`, README code map).
+- **Omnipose settings in the open.** `segmentation` has `use_preset` (true in the example: the organism's preset is
+  used and `cells` / `nuclei` spell out its diameter, mask_threshold and flow_threshold, so switching `organism`
+  is enough; false or absent, as in every older config: `cells` / `nuclei` override the preset as before). With
+  `use_preset` true, differing `cells` / `nuclei` values are reported in the log and ignored. The napari panel's
+  Omnipose tab has the same switch.
+- **Decomposition settings in the config.** `spots.decomposition` = `{"alpha": 0.5, "beta": 2, "gamma": 1}`,
+  the Big-FISH `decompose_dense` settings, the same for every channel (were constants in `spots/detection.py`);
+  recorded for `which_images` only when changed, so earlier results are not reported as different.
+- `cell_flags` is no longer in the example and is only written when it differs from the defaults: its settings
+  are not meant to be tuned.
+- **Old configs keep working.** A file with a `"parameters"` block is read as before (the blocks win where both
+  are given); nothing changes in memory (`exp.parameters`, `img.json`, `which_images`), so old results are not
+  reported as "processed with other settings". `buddy.config.write_config` saves any config in the new layout.
+- **Readable files.** `write_config` / `to_json` write 2-space JSON with short lists on one line and a blank line
+  between blocks; keys that start with `_` are comments and ignored. `config_files/config_example.json` is
+  regenerated from `config.example_config()` (`test_config_layout.py` keeps it in step with `config.py`): every
+  setting with its default, one `_about` comment per block, the example set's channels.
+- Relative `inputdir` / `outputdir` in a config file are relative to the config file's folder (was: the current
+  directory); the example points at `../../test yourself/...` from `config_files/`.
+- A real `.vsi` in the test data: release `test-data-vsi` (`vsi.zip`, ~400 MB: one image of the example set with
+  its `_..._` folder and `_DIC.tif`) is fetched for the slow `tests/test_vsi_file.py`, which checks the series
+  names, every channel stack (checksums in `vsi_reference.json`, made by `tests/make_vsi_reference.py`) and the
+  DIC pairing. The fast Bio-Formats test keeps using a small OME-TIFF.
+- CI: `slow_tests.yml` runs the slow tests (Omnipose and the bud model on the CPU, the real `.vsi`) every Monday
+  and on demand; `tests.yml` keeps running the fast tests on every push.
+- The aliases of 0.5.0 for napari-buddy <= 0.3 are gone: `buddy/rerun_check.py`, `buddy/spots/gpu.py`,
+  `Image.load_data`, `Image.save_metadata` (napari-buddy 0.4.0 uses the real names).
+- Error messages and the code map name the new blocks (`"hardware": "use_gpu"`, ...). napari-buddy 0.4.0 writes
+  the new layout.
+
+## 0.5.2 (2026-10-29)
+Two dependencies replaced by buddy's own code; fewer packages, and Python 3.12 works.
+- **Bio-Formats without bioio.** `buddy/reading/vsi.py` reads microscope files through Bio-Formats directly (JPype);
+  `bioio` + `bioio-bioformats` (58 packages: dask, xarray, ome-types, pydantic, ...) are gone. Bio-Formats itself now
+  comes as the pip package `bioformats_jar` (the 6.7.0 jar, the same version bioio used), so Maven is no longer
+  installed and nothing is downloaded on the first `.vsi` read (the `.jgo` problems of the troubleshooting table
+  are history). The planes are read into one reused Java array viewed by numpy - faster than bioio's dask path.
+  `BUDDY_VSI_READER=bioio` still uses bioio when it is installed, for comparing. Series names, channel order and
+  the arrays are the same; verified on the example set.
+- **The bud model's U-Net in plain PyTorch.** `buddy/buds/unet.py` is segmentation_models_pytorch's
+  `Unet("resnet34")` written out with torchvision's resnet34 as the encoder, with the same module names: the released
+  weights load unchanged (strict) and the outputs are bit-identical (test_unet.py checks against smp when it is
+  installed). `segmentation-models-pytorch` (+ timm, huggingface-hub, safetensors, httpx, ...) is gone. Training
+  (notebook 05) works the same; `pretrained_encoder=True` takes torchvision's ImageNet weights.
+- Test data `test-data-v3`: the step-3 / step-5 reference outputs of the regression test were still those of the
+  detection before 0.4.0 (only the bud-model reference had been renewed), so `pytest tests/test_regression.py`
+  failed everywhere. Renewed with the current code (SRL1 on the crop: 363 -> 507 spots, the dim bottom-of-focus
+  spots 0.4.0 keeps); the test, `conftest.py` and CI point at `test-data-v3`.
+- CI installs with the constraint files too.
+- **Fix of 0.5.1: Omnipose silently ran as plain Cellpose.** The omnipose wheel ships its own `cellpose_omni`; the
+  installers also installed the separate `cellpose-omni==0.9.1` from PyPI, which overwrote it with an older copy
+  whose Omnipose check fails -> `>>cyto<< model set to be used`, 0 cells, `niter` error on the nuclei. Only
+  `omnipose` is installed now, and `masks.check_omnipose()` (installers, `load_models`) verifies that the Omnipose
+  models are really available. To repair an environment made by 0.5.1: `pip uninstall cellpose-omni`,
+  `pip install --force-reinstall --no-deps omnipose==1.1.4`.
+- Fix of 0.5.1: the list of what Omnipose needs was too short - `import cellpose_omni.models` also pulls in torchvf,
+  cmap, colour-science, pyinstrument, imagecodecs and aicsimageio, so step 2 failed on a fresh install. The first five
+  are in `pyproject.toml` now; for `aicsimageio` (~25 packages, used by nothing buddy calls) `masks.py` registers an
+  empty stand-in module when it is not installed. Checked by importing and segmenting in a bare environment. A core
+  install is ~70 packages (0.4.0: ~150), a full one ~200 (0.4.0: ~260).
+- **Python 3.12.** Python 3.10 reaches end of life in October 2026, and Omnipose's "3.10 only" is history. The
+  installers, the constraint files and CI now use 3.12 (`requires-python >=3.10,<3.13`; 3.13 has no PyTorch 2.5.1).
+  The package versions are the same ones as before (our 3.10 environment, to the version); checked on 3.12: all
+  tests, Omnipose masks and spots identical to the 3.10 reference. numpy 2 (with the newest scipy / scikit-image /
+  numba) was checked too and gives the same masks and spots, so `numpy<3` is allowed, but the constraints keep 1.26.
+  One drift caught on the way: the newest `ncolor` breaks Omnipose 1.1.4 - the constraints pin 1.5.3.
+- **Output folders can move.** `Image.from_json` takes the folder the `img.json` is in as the image folder, whatever
+  the stored `savepath` says (an absolute path of the computer that made it). A processed dataset copied to another
+  drive, computer or OS now just works (steps, napari, notebooks); the next save writes the new location.
+
+## 0.5.1 (2026-10-28)
+Installation: the same packages on every machine, and fewer of them.
+- **Pinned versions.** `constraints/windows.txt`, `linux.txt`, `macos.txt` hold the version of every package buddy
+  is tested with (the Windows file is our working environment to the version); `install.sh` / `install.ps1` pass
+  them to pip (`-c`). Until now nothing was pinned, so every install resolved to whatever was newest that day -
+  new releases of Big-FISH, scikit-image or Omnipose changed the spots or broke the install. PyTorch is pinned to
+  2.5.1 in `pyproject.toml`.
+- **GPU on Linux fixed.** The installers swapped in the CUDA 12.1 PyTorch with `--no-deps`; on Linux that wheel
+  needs the `nvidia-*` packages that `--no-deps` left out, so `import torch` failed. On Linux the PyPI wheel of
+  torch 2.5.1 is already a CUDA build with those libraries as dependencies: no swap. Windows keeps the swap (the
+  cu121 wheel is self-contained); macOS is CPU.
+- **Fewer packages.** `omnipose` on PyPI pulls ~100 packages (aicsimageio, networkit, dask-image, pyinstrument, ...);
+  segmentation uses a dozen. Those are now listed in `pyproject.toml` and the installers add `omnipose` +
+  `cellpose-omni` with `--no-deps`. The OME-TIFF channel stacks are written with `tifffile` (`ome=True`, same
+  axes, channel name and compression) instead of `bioio-ome-tiff`; `jsonpickle` and `natsort` (never imported) and
+  `jupyterlab` (notebook is enough) are dropped. A full install is ~220 packages instead of ~280, a core one ~110.
+- `install.ps1` now does the same steps as `install.sh` (removes an existing env first, stops on the first error).
+- `masks.load_models` says what to install when `cellpose_omni` is missing.
+- (Corrected in 0.5.2: 0.5.1's installers also installed the `cellpose-omni` package from PyPI, which overwrites the
+  copy inside the omnipose wheel and turns Omnipose into plain Cellpose. Only `omnipose` is installed now.)
+
+## 0.5.0 (2026-10-28)
+Changes after Zsloth's review of the code and the installation on Linux - thank you.
+- **One place per thing.** The processing steps are written out in `buddy/pipeline.py` (`segment_cells`,
+  `find_focus`, `classify_buds`, ... one function per sub-step, each reading one block of the config file); `Image`
+  (`buddy/image.py`) only holds an image's files, arrays and `img.json`. The Omnipose code moved from
+  `segmentation/omnipose.py` (the name of the library) to `segmentation/masks.py`, the GPU versions of the Big-FISH
+  steps from `spots/gpu.py` to `spots/gpu_detection.py` (`spots/gpu.py` stays as an alias for one version), and `rerun_check.py` -
+  which images a step still has to do - to `which_images.py` (alias kept); no function name exists twice any more. `buddy.where()` prints where each step lives (also the "Where things are" table in README.md).
+  The outputs are unchanged (checked file by file against 0.4.0 on the test field); the public functions
+  (`pipeline.read_image`, `segment_image`, `spots_image`, `buds_and_counts`, `reassign_image`, `Experiment.init_omnipose`)
+  kept their names.
+- **Errors say where and what to do.** An error inside a step is raised as `pipeline.StepError`: "step 2 (segment)
+  of image X failed in buddy/segmentation/masks.py:71 in run_omnipose(): ..." with a hint for known causes (GPU out
+  of memory -> `"tile": true` in step 2, `gpu_spot_detection` / `use_gpu` false in step 3; a file of an earlier step missing -> which step writes it). `Image.load()` raises a
+  `MissingFileError` naming the step that makes a file instead of returning None; files a step can do without are asked
+  for with `optional=True` and logged.
+- **Omnipose settings in the config file**: new optional block `"segmentation"` (`cell_model`, `nucleus_model`,
+  `tile`, `cells`, `nuclei`; defaults and presets in `buddy/config.py`). `"tile": true` is the fix for *CUDA out of
+  memory* in step 2 on small GPUs. The settings used are recorded in `img.json` and in the re-run check.
+  napari-buddy 0.3.2 has an *Omnipose* tab in *Create config file* for it.
+- Install: one `install.sh` for macOS and Linux (temporary files under `~/.cache`, an existing environment is
+  replaced, CPU PyTorch first on Linux without a GPU, `napari[pyqt5]` on Linux); INSTALL.md is the only place
+  installation is described. Notebooks: a `ROOT` cell (the folder above the repositories) and forward-slash paths,
+  so they run on every operating system and from any copy of the folder; `DATA` / `CFG_FILE` for your own data;
+  warnings shown by default (`SHOW_WARNINGS`); notebook 04 reads the example table.
+
 ## 0.4.0 (2026-10-18)
 - DIC turn (still measured per image): buddy now warns when the DIC lighting direction of an image cannot be measured
   clearly (consistency < 0.9, e.g. blurry DIC) and writes the measurement to `img.json`; `bud_training.prepare_image`

@@ -5,15 +5,21 @@ An Experiment = the images in one input directory that share one config file (pr
     exp.create_image_list()            # the .vsi files / TIFF stacks in inputdir -> exp.images
     exp.read_image_list_from_jsons()   # the processed images in outputdir       -> exp.json_files
 
-Settings are attributes: exp.parameters, exp.channels, exp.bud_classification, exp.cell_flags, exp.cell_cycle (dicts with every
+Settings are attributes: exp.parameters, exp.segmentation, exp.channels, exp.bud_classification, exp.cell_flags, exp.cell_cycle (dicts with every
 default filled in, see buddy/config.py), exp.inputdir / exp.outputdir, exp.if_already_processed.
 """
 import logging
 import re
 from pathlib import Path
 
-from buddy.config import BUD_CLASSIFICATION_DEFAULTS, CELL_CYCLE_DEFAULTS, CELL_FLAG_DEFAULTS, load_config, validate  # noqa: F401 (re-exported)
-from buddy.log import keep_logging, setup_logging
+from buddy.config import (  # noqa: F401 (re-exported)
+    BUD_CLASSIFICATION_DEFAULTS,
+    CELL_CYCLE_DEFAULTS,
+    CELL_FLAG_DEFAULTS,
+    load_config,
+    validate,
+)
+from buddy.log import setup_logging
 from buddy.reading.tiff_input import find_dic_file, is_stack
 
 log = logging.getLogger("buddy")
@@ -56,15 +62,11 @@ class Experiment:
     # ---- models shared by all images -------------------------------------------------------------
     def init_omnipose(self, use_GPU=None):
         """
-        Load the Omnipose models once (cells: cyto2_omni, nuclei), so they are not re-loaded for every image.
-        use_GPU: None = follow "use_gpu" in the config file; falls back to the CPU without a GPU.
+        Load the two Omnipose models of the config once (buddy/segmentation/masks.py), so they are not re-loaded
+        for every image. use_GPU: None = follow "use_gpu" in the config file; falls back to the CPU without a GPU.
         """
-        with keep_logging():
-            from cellpose_omni import models  # torch import deferred to here
-            self.use_GPU = gpu_available(self.use_gpu if use_GPU is None else use_GPU)
-            log.info(f'initialising omnipose models (cell: cyto2_omni, nuclei) on {"GPU" if self.use_GPU else "CPU"}')
-            self.cell_model = models.CellposeModel(gpu=self.use_GPU, model_type="cyto2_omni")
-            self.nuclei_model = models.CellposeModel(gpu=self.use_GPU, model_type="nuclei")
+        from buddy.segmentation import masks
+        self.cell_model, self.nuclei_model, self.use_GPU = masks.load_models(self, use_GPU)
 
     def init_bud_model(self):
         """Load the bud model chosen in the config once (None when bud classification is off)."""

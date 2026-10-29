@@ -1,7 +1,8 @@
 """
 Step 3a per channel: the in-focus slices, the background filter, spot detection and the decomposition of dense
-regions (Big-FISH, with GPU versions in buddy.spots.gpu). Every function takes arrays and settings and returns
-its result; Image writes the files.
+regions (Big-FISH). Every function takes arrays and settings and returns its result; pipeline.py writes the files.
+spots/gpu_detection.py has the same three Big-FISH operations (background filter, detection, decomposition) in
+PyTorch for the GPU; run_on_gpu_or_cpu() picks one per call and falls back to Big-FISH when the GPU cannot.
 
     from buddy.spots.detection import find_focus, filter_background, detect_spots, decompose_spots
 """
@@ -14,13 +15,12 @@ from bigfish.detection import detect_spots as _bf_detect_spots
 from bigfish.stack import compute_focus, remove_background_gaussian
 from scipy.signal import savgol_filter
 
-from buddy.spots import gpu as gpu_versions
+from buddy.config import DECOMPOSITION_DEFAULTS
+from buddy.spots import gpu_detection as gpu_versions
 
 log = logging.getLogger("buddy")
 
-DECOMPOSITION = dict(alpha=0.5,   # alpha impacts the number of spots per candidate region
-                     beta=2,      # beta impacts the number of candidate regions to decompose
-                     gamma=1)     # gamma the filtering step to denoise the image
+DECOMPOSITION = DECOMPOSITION_DEFAULTS   # alpha, beta, gamma of Big-FISH's decompose_dense; the "spots" block of the config can change them
 DECOMPOSITION_SEED = 0            # Big-FISH builds the reference spot from up to 2000 randomly chosen spots; a fixed seed makes reruns identical
 
 
@@ -39,7 +39,7 @@ def run_on_gpu_or_cpu(gpu, cpu, device, what=""):
             import torch
             torch.cuda.empty_cache()
             log.warning(f"..{what}: GPU failed ({e.__class__.__name__}), using Big-FISH on the CPU "
-                        "(lower buddy.spots.gpu.BLOCK_ROWS if the GPU runs out of memory)")
+                        "(lower buddy.spots.gpu_detection.BLOCK_ROWS if the GPU runs out of memory)")
     return cpu(), "cpu (big-fish)"
 
 
@@ -160,19 +160,21 @@ def detect_spots(stack, filtered, ifx_1, ifx_2, threshold, scale, spot_radius, d
     return np.concatenate((spots, intensity, filtered_intensity), axis=1), threshold, backend
 
 
-def decompose_spots(stack, spots, scale, spot_radius, device=None, what=""):
+def decompose_spots(stack, spots, scale, spot_radius, device=None, what="", decomposition=None):
     """
     Dense regions (several molecules) decomposed with Big-FISH. Returns (decomposed spots, dense regions, reference spot, backend).
+    decomposition: {"alpha", "beta", "gamma"} of Big-FISH's decompose_dense ("spots" block of the config), None = the defaults.
     Big-FISH samples up to 2000 spots at random to build the reference spot; NumPy's random generator is seeded with
     DECOMPOSITION_SEED for this step (and restored afterwards), so reruns on the CPU or the GPU give the same result.
     """
     spots = np.asarray(spots)[:, :3].copy()
+    settings = {**DECOMPOSITION, **(decomposition or {})}
     state = np.random.get_state()
     np.random.seed(DECOMPOSITION_SEED)
     try:
         (decomposed, dense, reference), backend = run_on_gpu_or_cpu(
-            lambda d: gpu_versions.decompose_dense(stack, spots, scale, spot_radius, device=d, **DECOMPOSITION),
-            lambda: _bf_decompose_dense(stack, spots, voxel_size=scale, spot_radius=spot_radius, **DECOMPOSITION), device, what)
+            lambda d: gpu_versions.decompose_dense(stack, spots, scale, spot_radius, device=d, **settings),
+            lambda: _bf_decompose_dense(stack, spots, voxel_size=scale, spot_radius=spot_radius, **settings), device, what)
     finally:
         np.random.set_state(state)                 # leave the rest of buddy's random state as it was
     return decomposed, dense, reference, backend

@@ -33,7 +33,7 @@ def default_workers(gb_per_image=4):
 
 
 def _experiment(cfg_file, inputdir, outputdir, parameter_overrides=None):
-    """The Experiment from the config file; parameter_overrides (dict) replaces entries of its "parameters" block."""
+    """The Experiment from the config file; parameter_overrides (dict) replaces entries of the flat parameters (scale, use_gpu, ...)."""
     from buddy.experiment import Experiment
     exp = Experiment.from_cfg_file(cfg_file)
     exp.inputdir, exp.outputdir = inputdir, outputdir

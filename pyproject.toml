@@ -1,6 +1,6 @@
 [project]
 name = "buddy"
-version = "0.4.0"
+version = "0.6.0"
 authors = [
   {name = "LaToya Vanderbling", email = "latoya.vanderbling@gmail.com"},
 ]
@@ -8,34 +8,53 @@ description = "Wrapper for BigFish spot detection package"
 readme = "README.md"
 license = "BSD-3-Clause"        # see LICENSE
 
-# Omnipose is only tested on 3.8.5–3.10.11 and breaks on 3.11+,
-# so cap Python here. This stops pip from silently building an env
-# that can never install omnipose.
-requires-python = ">=3.9,<3.11"
+# 3.12 is what the installers and the constraint files use (since 0.5.2; 3.10 before). 3.13: PyTorch 2.5.1 has no
+# wheels for it.
+requires-python = ">=3.10,<3.13"
 
 dependencies = [
-    # numpy<2 is important: cellpose-omni / big-fish / older scikit-image
-    # break against the numpy 2.0 API (e.g. np.str_ changes).
-    "numpy<2",
+    # the constraints pin numpy 1.26 (the version of the paper's runs); numpy 2 gives the same masks and spots (tested
+    # with 0.5.2), so it is allowed here
+    "numpy<3",
     "scipy",
     "scikit-image",
-    "big-fish",
-    "omnipose",
-    "bioio",
-    "bioio-bioformats",
-    "bioio-ome-tiff",   # provides OmeTiffWriter (moved out of bioio core in 3.x);
-                        # buddy/image.py does: from bioio_ome_tiff.writers import OmeTiffWriter
-    "jsonpickle",
-    "natsort",
-    "seaborn",
+    "scikit-learn",     # Big-FISH and Omnipose use it
+    "big-fish",         # spot detection
+    # reading .vsi (Olympus) through Bio-Formats: the jar of Bio-Formats 6.7.0 (+ JPype1), buddy/reading/vsi.py;
+    # Java itself comes from conda (installers). Pinned: the Bio-Formats version decides how a .vsi is parsed.
+    "bioformats_jar==6.7.0.post2",
+    "tifffile",         # OME-TIFF channel stacks, TIFF input
+    "pandas",           # per-cell tables; notebooks 02-05
     "matplotlib",
-    "pandas",     # notebooks 02-05 build/read the master dataframe
-    "tifffile",   # crop-generation notebooks write per-cell TIFFs
-    "segmentation-models-pytorch",   # network of the bud model (bud_model.py); PyTorch comes with omnipose
-    "psutil",     # parallel notebook: picks the number of workers from free memory
-    # NOTE: 'pathlib' was removed. It is part of the standard library
-    # since Python 3.4; the PyPI backport of the same name is unmaintained
-    # and can break installs under modern setuptools.
+    "seaborn",          # notebook 02
+    "psutil",           # parallel step 1: number of workers from free memory
+    # PyTorch, pinned: Omnipose, the bud model and GPU spot detection are tested with this version. On Linux and
+    # Windows the installer takes the matching CUDA build; macOS is CPU only.
+    "torch==2.5.1",
+    "torchvision==0.20.1",
+    # the bud model's U-Net (buddy/buds/unet.py) is plain torch + torchvision's resnet34
+    # Omnipose itself is NOT listed here: "omnipose" on PyPI pulls in ~100 packages (aicsimageio, networkit, dask-image,
+    # ...) of which segmentation needs about fifteen. The installers do pip install --no-deps omnipose (version in
+    # constraints/; its wheel includes cellpose_omni - the separate cellpose-omni package on PyPI is older and must NOT
+    # be installed next to it), and these are what importing and running its segmentation code needs (found by
+    # importing cellpose_omni.models and segmenting the test field in a bare environment):
+    "numba",
+    "edt",
+    "fastremap",
+    "mgen",
+    "dbscan",
+    "ncolor",
+    "mahotas",
+    "dask",
+    "opencv-python-headless",
+    "imagecodecs",
+    "natsort",
+    "tqdm",
+    "torchvf",
+    "cmap",
+    "colour-science",
+    "pyinstrument",      # the last three are imported by omnipose at module level, unused by segmentation
+    # (aicsimageio is imported by cellpose_omni.io too but not needed: buddy/segmentation/masks.py stands in for it)
 ]
 
 classifiers = [
@@ -48,10 +67,13 @@ classifiers = [
 test = ["pytest", "ruff"]
 # The napari viewer + Qt backend. Installed INTO the env so `python -m napari`
 # launches from here instead of a base-conda napari.
-napari = ["napari[pyqt6]"]
+napari = [
+    "napari[pyqt6]; sys_platform != 'linux'",
+    "napari[pyqt5]; sys_platform == 'linux'",    # Qt6 does not start on every Linux desktop
+]
 # Jupyter, so `python -m notebook` runs the pipeline notebooks from this env
 # (and never falls back to a broken base-conda Jupyter).
-notebooks = ["notebook", "jupyterlab"]
+notebooks = ["notebook"]
 # ONLY for the archived CNN bud-annotator trial (archive/). Heavy (PyTorch);
 # don't install unless you're reviving that experiment. For CUDA builds of
 # torch you may need the PyTorch index; CPU wheels install from PyPI fine.
@@ -80,7 +102,7 @@ include = ["buddy*"]
 [tool.ruff]
 line-length = 130
 target-version = "py310"
-exclude = ["buddy/config_files", "*.ipynb"]  # notebooks: repeated imports between cells are normal
+exclude = ["config_files", "*.ipynb"]  # notebooks: repeated imports between cells are normal
 
 [tool.ruff.lint]
 # E = errors, F = pyflakes (undefined names, unused imports), B = likely bugs, I = import order

@@ -37,15 +37,38 @@ STEP_NAMES = {'read': 'step 1 (read)', 'segment': 'step 2 (segment)', 'spots': '
 # ---------------------------------------------------------------------------------------------
 # the settings that change the result of each step
 # ---------------------------------------------------------------------------------------------
+def _segmentation_changes(p, seg):
+    """The Omnipose part of the "segmentation" block where it changes the result compared to the defaults."""
+    from buddy.config import SEGMENTATION_DEFAULTS, omnipose_overrides
+    changed = {k: v for k, v in seg.items() if k not in ('cells', 'nuclei', 'use_preset') and v != SEGMENTATION_DEFAULTS.get(k)}
+    if seg and p.get('organism'):
+        cells, nuclei = omnipose_overrides(p, seg)
+        changed.update({k: v for k, v in (('cells', cells), ('nuclei', nuclei)) if v})
+    return changed
+
+
+def _decomposition_changes(p):
+    from buddy.config import DECOMPOSITION_DEFAULTS
+    d = p.get('decomposition') or {}
+    return {k: v for k, v in d.items() if v != DECOMPOSITION_DEFAULTS.get(k)}
+
+
 def step_settings(exp, step):
     """Settings in the config file that change the result of a step (GPU use does not)."""
     p = exp.parameters
     if step == 'read':
         return {'channels': {ch: c.get('filter') for ch, c in exp.channels.items()}}
     if step == 'segment':
-        return {'organism': p.get('organism'), 'min_size': p.get('min_size'),
-                'nuclei_min_size': p.get('nuclei_min_size', 10), 'min_cell_area': p.get('min_cell_area', 20),
-                'expand_px': p.get('expand_px', 0), 'remove_edge_cells': bool(p.get('remove_edge_cells', False))}
+        seg = getattr(exp, 'segmentation', None) or {}
+        settings = {'organism': p.get('organism'), 'min_size': p.get('min_size'),
+                    'nuclei_min_size': p.get('nuclei_min_size', 10), 'min_cell_area': p.get('min_cell_area', 20),
+                    'expand_px': p.get('expand_px', 0), 'remove_edge_cells': bool(p.get('remove_edge_cells', False))}
+        # the "segmentation" block (buddy >= 0.5.0): only recorded when it differs from the defaults, so images
+        # processed by older versions are not reported as processed with other settings
+        changed = _segmentation_changes(p, seg)
+        if changed:
+            settings['segmentation'] = changed
+        return settings
     if step == 'spots':
         bud = getattr(exp, 'bud_classification', {}) or {}
         bud_model = 'off'
@@ -53,11 +76,14 @@ def step_settings(exp, step):
             bud_model = bud.get('model')
             if bud_model == 'with_ASH1CLB2':
                 bud_model += f" ({bud.get('ash_channel')})"
-        return {'sigma': list(p.get('sigma', [])), 'scale': list(p.get('scale', [])),
-                'spot_radius': list(p.get('spot_radius', [])), 'patch_size': list(p.get('patch_size', [])),
-                'thresholds': {ch: ('auto' if c.get('threshold') is None else c.get('threshold'))
-                               for ch, c in exp.channels.items() if ch != 'DAPI'},
-                'bud_model': bud_model}
+        settings = {'sigma': list(p.get('sigma', [])), 'scale': list(p.get('scale', [])),
+                    'spot_radius': list(p.get('spot_radius', [])), 'patch_size': list(p.get('patch_size', [])),
+                    'thresholds': {ch: ('auto' if c.get('threshold') is None else c.get('threshold'))
+                                   for ch, c in exp.channels.items() if ch != 'DAPI'},
+                    'bud_model': bud_model}
+        if _decomposition_changes(p):        # only when changed: images of older versions are not reported as different
+            settings['decomposition'] = _decomposition_changes(p)
+        return settings
     raise ValueError(f"unknown step {step!r} (use 'read', 'segment' or 'spots')")
 
 
@@ -71,9 +97,16 @@ def _recorded_settings(meta, step, folder, exp):
         current = step_settings(exp, 'read')['channels']
         return {'channels': {ch: f for ch, f in current.items() if (folder / f'{ch}.tif').exists()}}, True
     if step == 'segment':
-        return {'organism': p.get('organism'), 'min_size': p.get('min_size'),
-                'nuclei_min_size': p.get('nuclei_min_size', 10), 'min_cell_area': p.get('min_cell_area', 20),
-                'expand_px': p.get('expand_px', 0), 'remove_edge_cells': bool(p.get('remove_edge_cells', False))}, True
+        seg = getattr(exp, 'segmentation', None) or {}
+        settings = {'organism': p.get('organism'), 'min_size': p.get('min_size'),
+                    'nuclei_min_size': p.get('nuclei_min_size', 10), 'min_cell_area': p.get('min_cell_area', 20),
+                    'expand_px': p.get('expand_px', 0), 'remove_edge_cells': bool(p.get('remove_edge_cells', False))}
+        # the "segmentation" block (buddy >= 0.5.0): only recorded when it differs from the defaults, so images
+        # processed by older versions are not reported as processed with other settings
+        changed = _segmentation_changes(p, seg)
+        if changed:
+            settings['segmentation'] = changed
+        return settings, True
     results = meta.get('results', {})
     bud = results.get('bud_classification')
     return {'sigma': list(p.get('sigma', [])), 'scale': list(p.get('scale', [])),
