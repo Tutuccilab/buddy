@@ -17,6 +17,8 @@ Each step reads one block (`buddy.where()`, README code map).
   recorded for `which_images` only when changed, so earlier results are not reported as different.
 - `cell_flags` is no longer in the example and is only written when it differs from the defaults: its settings
   are not meant to be tuned.
+- Fixed: `install.ps1` passed the Omnipose requirement as `@Omnipose` (PowerShell splats a string into its characters:
+  `o m n i p o s e = = 1 . 1 . 4`), so the Windows installer stopped at the Omnipose step; now `$Omnipose`.
 - Fixed: Python's `faulthandler` is left off once the Java VM has started (it was switched back on after the
   start). The JVM handles SIGSEGV itself (safepoints, null checks); with faulthandler's handler in place the process
   aborted on Linux, typically during a garbage collection while reading a large `.vsi` - the crash of the tests on

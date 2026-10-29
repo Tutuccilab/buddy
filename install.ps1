@@ -22,7 +22,7 @@ if (-not (Test-Path "pyproject.toml")) { throw "Run this from the buddy repo roo
 if (-not (Get-Command conda -ErrorAction SilentlyContinue)) { throw "conda not found: run this in the Anaconda Prompt (INSTALL.md)." }
 
 $Constraints = "constraints\windows.txt"
-$Omnipose = (Get-Content $Constraints | Where-Object { $_ -match '^omnipose==' })
+$Omnipose = (Get-Content $Constraints | Where-Object { $_ -match '^omnipose==' } | Select-Object -First 1).Trim()
 
 function Run { conda run --no-capture-output -n $EnvName @args; if ($LASTEXITCODE -ne 0) { throw "step failed: $args" } }
 
@@ -41,7 +41,7 @@ Write-Host "==> Installing buddy (editable, with test + napari + notebooks extra
 Run pip install -c $Constraints -e ".[test,napari,notebooks]"
 
 Write-Host "==> Installing Omnipose ($Omnipose, without its own dependency list: what it needs is in pyproject.toml)"
-Run pip install --no-deps @Omnipose
+Run pip install --no-deps $Omnipose
 
 if (Test-Path $NapariBuddyPath) {
     Write-Host "==> Installing napari-buddy plugin from $NapariBuddyPath"
