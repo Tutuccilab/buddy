@@ -230,8 +230,9 @@ study (step 4 of the pipeline): 132 fields of view from five imaging days (22-06
 25-08-20 and 25-08-22), strains YET563 and YET572 (*she2*Δ, *she3*Δ), YET915, YET916, YET918, YET919 and
 YET921, biological replicates BR1–BR5. Whole fields, not cells, were assigned to sets. To measure performance
 on an imaging session the models have never seen, every field of imaging day 24-09-09 was kept out of training:
-the test set consists of 20 fields of held-out replicates (24-09-09: YET915 BR5, YET916 BR4, YET921 BR4;
-25-08-20: YET572 BR5), and the 19 other fields of 24-09-09 were not used at all. Of the remaining fields, 66
+the test set consists of 14 fields of held-out replicates (24-09-09: YET915 BR5, YET916 BR4, YET921 BR4),
+and the 19 other fields of 24-09-09 were not used at all. The 6 held-out fields of 25-08-20 (YET572 BR5)
+were not scored. Of the remaining fields, 66
 were used for training and 6 (about 10% per strain, chosen at random) to monitor training. The 21 fields of
 imaging day 22-04-29 were not used because of poor DIC or failed segmentation. Each Omnipose cell was matched
 to the annotation: an overlap (IoU) ≥ 0.5 with an annotated cell gives *budded* or *unbudded*, ≥ 50% of its
